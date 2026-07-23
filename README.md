@@ -60,6 +60,13 @@ This installs the skill **and** the read-only MCP server together. Prefer a
 project-scoped config instead? Drop the standard block into `.mcp.json` at your
 repo root.
 
+### Claude Desktop
+
+Add the standard block to your `claude_desktop_config.json`:
+
+- macOS — `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows — `%APPDATA%\Claude\claude_desktop_config.json`
+
 ### Cursor
 
 Add the standard block to `.cursor/mcp.json`.
