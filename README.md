@@ -21,19 +21,18 @@ knowledge to build and verify Intentrax-instrumented applications.
 
 ## Quickstart
 
-### Claude Code (one command)
+The command is the same everywhere — `npx -y @intentrax/mcp-server`. Only the
+config file and its format differ per host. Pick your host below.
 
-```
-/plugin marketplace add Intentrax/intentrax-skills
-/plugin install intentrax-execution-assurance@intentrax
-```
+**Credentials, honestly:** the **public verify tool is keyless** — it works with
+no environment variables at all. `INTENTRAX_MCP_API_KEY` and
+`INTENTRAX_MCP_TENANT_ID` are needed **only** for the tenant proof-read tool,
+which additionally requires an issued tenant and an enabled production API
+runtime. If you only need public verification, omit the `env` block entirely.
+**Never commit a key** — reference it from your environment, as shown below.
 
-This installs the skill **and** the read-only MCP server together.
-
-### Any other host
-
-Add the read-only MCP server. The command is `npx -y @intentrax/mcp-server`
-everywhere — only the config file differs. Most hosts take this block:
+Most hosts use this **standard MCP block** (referenced as "the standard block"
+in the per-host sections that follow):
 
 ```json
 {
@@ -50,22 +49,122 @@ everywhere — only the config file differs. Most hosts take this block:
 }
 ```
 
-| Host | Config file |
-| --- | --- |
-| Claude Desktop | mac `~/Library/Application Support/Claude/claude_desktop_config.json` · Win `%APPDATA%\Claude\claude_desktop_config.json` |
-| Cursor | `.cursor/mcp.json` |
-| Kiro | `.kiro/settings/mcp.json` |
-| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
-| Gemini CLI | `~/.gemini/settings.json` |
-| Qwen Code | `~/.qwen/settings.json` |
+### Claude Code (one command)
 
-**VS Code** (`servers`+`inputs`), **Zed** (`context_servers`), **Codex** (TOML),
-and **AgentScope** (Python) use their own format — full per-host blocks are in the
-[`@intentrax/mcp-server` README](https://www.npmjs.com/package/@intentrax/mcp-server).
+```
+/plugin marketplace add Intentrax/intentrax-skills
+/plugin install intentrax-execution-assurance@intentrax
+```
 
-The public verification tool needs no credentials. For the tenant-scoped tool,
-set `INTENTRAX_MCP_API_KEY` and `INTENTRAX_MCP_TENANT_ID` in your environment —
-**never commit a key.**
+This installs the skill **and** the read-only MCP server together. Prefer a
+project-scoped config instead? Drop the standard block into `.mcp.json` at your
+repo root.
+
+### Claude Desktop
+
+Add the standard block to your `claude_desktop_config.json`:
+
+- macOS — `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Windows — `%APPDATA%\Claude\claude_desktop_config.json`
+
+### Cursor
+
+Add the standard block to `.cursor/mcp.json`.
+
+### Kiro
+
+Add the standard block to `.kiro/settings/mcp.json`.
+
+### Windsurf
+
+Add the standard block to `~/.codeium/windsurf/mcp_config.json`.
+
+### Gemini CLI
+
+Add the standard block to `~/.gemini/settings.json`.
+
+### Qwen Code
+
+Add the standard block to `~/.qwen/settings.json`.
+
+### Codex
+
+`~/.codex/config.toml` uses TOML, and lists env variable **names** under
+`env_vars` (it forwards them from your environment):
+
+```toml
+[mcp_servers.intentrax-readonly]
+command = "npx"
+args = ["-y", "@intentrax/mcp-server"]
+env_vars = ["INTENTRAX_MCP_API_KEY", "INTENTRAX_MCP_TENANT_ID"]
+```
+
+### VS Code (Copilot)
+
+`.vscode/mcp.json` uses a `servers` key and an `inputs` array that prompts you
+for the values (so no secret is written to disk):
+
+```json
+{
+  "inputs": [
+    {
+      "id": "intentrax-mcp-key",
+      "type": "promptString",
+      "description": "Intentrax MCP API key",
+      "password": true
+    },
+    {
+      "id": "intentrax-mcp-tenant",
+      "type": "promptString",
+      "description": "Intentrax MCP tenant ID"
+    }
+  ],
+  "servers": {
+    "intentrax-readonly": {
+      "command": "npx",
+      "args": ["-y", "@intentrax/mcp-server"],
+      "env": {
+        "INTENTRAX_MCP_API_KEY": "${input:intentrax-mcp-key}",
+        "INTENTRAX_MCP_TENANT_ID": "${input:intentrax-mcp-tenant}"
+      }
+    }
+  }
+}
+```
+
+### Zed
+
+`settings.json` uses a `context_servers` top-level key; the command and args are
+the same:
+
+```json
+{
+  "context_servers": {
+    "intentrax-readonly": {
+      "command": "npx",
+      "args": ["-y", "@intentrax/mcp-server"],
+      "env": {
+        "INTENTRAX_MCP_API_KEY": "${INTENTRAX_MCP_API_KEY}",
+        "INTENTRAX_MCP_TENANT_ID": "${INTENTRAX_MCP_TENANT_ID}"
+      }
+    }
+  }
+}
+```
+
+### AgentScope
+
+AgentScope is a Python framework; it's supported via the same
+[`@intentrax/mcp-server`](https://www.npmjs.com/package/@intentrax/mcp-server)
+package — register it as an MCP server through AgentScope's toolkit. No JSON
+config file of its own.
+
+### Any other MCP host
+
+Use the standard block in whatever config file your host reads. If your host
+isn't listed here, the
+[`@intentrax/mcp-server` README](https://www.npmjs.com/package/@intentrax/mcp-server)
+has the current per-host details.
 
 ## When execution assurance is worth adding
 
