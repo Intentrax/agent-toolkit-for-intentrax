@@ -1,0 +1,117 @@
+# STAGES @intentrax/sdk and @intentrax/mcp-server on npm with npm trusted
+# publishing (GitHub OIDC; no npm token is stored anywhere) and provenance.
+# A staged version is not public until a maintainer approves it with 2FA
+# (`npm stage approve <stage-id>`), so a compromised GitHub account or workflow
+# cannot release anything on its own. Each package's npm trusted publisher
+# should allow only `npm stage publish` (leave "Allow npm publish" unticked).
+#
+# This file is the source of truth for .github/workflows/npm-publish.yml in the
+# PUBLIC repository Intentrax/agent-toolkit-for-intentrax. It is copied there by
+# sdk/publishing/sync-public-mirror.mjs; do not edit the copy.
+#
+# It publishes only from main, only when started by hand, and dry-runs by
+# default. For @intentrax/sdk it refuses to publish unless the packed tarball is
+# byte-identical to the one pinned by release-locks/intentrax-sdk-npm-release.lock.json.
+name: npm publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to publish
+        type: choice
+        options:
+          - sdk
+          - mcp-server
+        required: true
+      dry_run:
+        description: Pack and check only; do not publish
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: npm-publish
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PACKAGE: ${{ inputs.package }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v5
+        with:
+          node-version: "24.x"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Require npm with staged publishing support
+        run: |
+          node --version
+          npm --version
+          if ! npm stage --help >/dev/null 2>&1; then
+            echo "BLOCKED: this npm has no 'npm stage'; staged publishing is required"
+            exit 1
+          fi
+
+      - name: Pack
+        run: |
+          case "$PACKAGE" in sdk|mcp-server) ;; *) echo "unknown package"; exit 1 ;; esac
+          cd "packages/$PACKAGE"
+          npm pack --json --pack-destination "$RUNNER_TEMP" > "$RUNNER_TEMP/pack.json"
+          cat "$RUNNER_TEMP/pack.json"
+
+      - name: Check the tarball (and the release lock for the SDK)
+        run: |
+          node - <<'EOF'
+          const { readFileSync, appendFileSync } = require("node:fs");
+          const { createHash } = require("node:crypto");
+          const { join } = require("node:path");
+          const temp = process.env.RUNNER_TEMP;
+          const [pack] = JSON.parse(readFileSync(join(temp, "pack.json"), "utf8"));
+          const tarball = join(temp, pack.filename);
+          const sha256 = createHash("sha256").update(readFileSync(tarball)).digest("hex");
+          const manifest = JSON.parse(readFileSync(join("packages", process.env.PACKAGE, "package.json"), "utf8"));
+          const fail = (message) => { console.error(`BLOCKED: ${message}`); process.exit(1); };
+          if (pack.name !== manifest.name || pack.version !== manifest.version) fail("pack metadata does not match package.json");
+          if (manifest.repository?.url !== "git+https://github.com/Intentrax/agent-toolkit-for-intentrax.git" ||
+              manifest.repository?.directory !== `packages/${process.env.PACKAGE}`) fail("package.json repository does not point at this repository");
+          if (process.env.PACKAGE === "sdk") {
+            const lock = JSON.parse(readFileSync("release-locks/intentrax-sdk-npm-release.lock.json", "utf8"));
+            if (lock.package_name !== pack.name || lock.package_version !== pack.version) fail(`release lock is for ${lock.package_name}@${lock.package_version}`);
+            if (lock.npm_pack.tarball_sha256 !== sha256) fail(`tarball sha256 ${sha256} != release lock ${lock.npm_pack.tarball_sha256}`);
+            if (lock.npm_pack.integrity !== pack.integrity) fail("tarball integrity does not match the release lock");
+            console.log("tarball matches the release lock byte for byte");
+          }
+          console.log(`${pack.name}@${pack.version} sha256=${sha256} integrity=${pack.integrity}`);
+          appendFileSync(process.env.GITHUB_ENV, `TARBALL=${tarball}\nPKG_SPEC=${pack.name}@${pack.version}\n`);
+          EOF
+
+      - name: Refuse to republish an existing version
+        run: |
+          # The registry also refuses a version that is already staged.
+          if npm view "$PKG_SPEC" version >/dev/null 2>&1; then
+            echo "BLOCKED: $PKG_SPEC is already on npm; bump the version first"
+            exit 1
+          fi
+
+      - name: Stage with provenance (dry run)
+        if: env.DRY_RUN == 'true'
+        run: npm stage publish "$TARBALL" --provenance --access public --dry-run
+
+      - name: Stage with provenance
+        if: env.DRY_RUN != 'true'
+        run: |
+          npm stage publish "$TARBALL" --provenance --access public
+          echo "::notice::$PKG_SPEC is STAGED, not public. Approve with 2FA: npm stage list $PKG_SPEC, then npm stage approve <stage-id>"

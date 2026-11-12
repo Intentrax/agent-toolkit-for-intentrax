@@ -1,0 +1,370 @@
+{
+  "$schema": "intentrax://schemas/verification/typescript-sdk/npm-release-lock",
+  "release_id": "typescript-sdk-npm-release-001",
+  "release_version": "@intentrax/sdk/1.1.0",
+  "sdk_contract_version": "intentrax-public-sdk-contract/1.0",
+  "package_name": "@intentrax/sdk",
+  "package_version": "1.1.0",
+  "canonicalization_version": "json-stable-indent/1.0",
+  "hash_algorithm": "SHA-256",
+  "generator_version": "intentrax-typescript-sdk-release-gen/1.0",
+  "npm_install_lock_required": true,
+  "npm_dry_run_pack_required": true,
+  "npm_provenance_required": true,
+  "trusted_publishing_required": true,
+  "no_registry_write_performed": true,
+  "reproducible_inputs_only": true,
+  "runtime_requirements": [
+    "canonical-release-node=24.x",
+    "runtime-node>=20",
+    "npm>=10",
+    "go>=1.25"
+  ],
+  "publish_policy": {
+    "final_publish_claim_allowed": false,
+    "provenance_source": "npm provenance through trusted publishing or equivalent controlled release workflow",
+    "signing_key_source": "external-kms-or-hsm",
+    "dry_run_only_reason": "source tree stores deterministic npm release evidence only; registry publish and signing must run as controlled release operations outside pull request CI"
+  },
+  "npm_pack": {
+    "id": "@intentrax/sdk@1.1.0",
+    "name": "@intentrax/sdk",
+    "version": "1.1.0",
+    "size": 69756,
+    "unpackedSize": 449520,
+    "shasum": "fb298d8353b8e507ab8bd34de5c78961935ef070",
+    "integrity": "sha512-UCERQAh0yTh9Qj726JD8DmF/ZAMm4jMnL2Co1c3aTMt3/E5xOCA4CeRZVoK9dBROWl2gHDZCUWP3DCT9cAPW7w==",
+    "tarball_sha256": "9e57b88269ab94ced22d09843807b1b16675b9125cc71474f3535e81ab25b169",
+    "filename": "intentrax-sdk-1.1.0.tgz",
+    "files": [
+      {
+        "path": "LICENSE",
+        "size": 10188,
+        "mode": 420
+      },
+      {
+        "path": "README.md",
+        "size": 9858,
+        "mode": 420
+      },
+      {
+        "path": "cli/intentrax.mjs",
+        "size": 130906,
+        "mode": 420
+      },
+      {
+        "path": "examples/adapters/claude-code.md",
+        "size": 1190,
+        "mode": 420
+      },
+      {
+        "path": "examples/adapters/cursor.md",
+        "size": 1190,
+        "mode": 420
+      },
+      {
+        "path": "examples/adapters/langchain.md",
+        "size": 1203,
+        "mode": 420
+      },
+      {
+        "path": "examples/adapters/langgraph.md",
+        "size": 1202,
+        "mode": 420
+      },
+      {
+        "path": "examples/adapters/mcp.md",
+        "size": 1196,
+        "mode": 420
+      },
+      {
+        "path": "examples/adapters/vercel-ai-sdk.md",
+        "size": 1216,
+        "mode": 420
+      },
+      {
+        "path": "examples/agent-gateway-admission.md",
+        "size": 3705,
+        "mode": 420
+      },
+      {
+        "path": "examples/one-command-init.md",
+        "size": 4427,
+        "mode": 420
+      },
+      {
+        "path": "examples/sandbox/README.md",
+        "size": 2705,
+        "mode": 420
+      },
+      {
+        "path": "examples/sandbox/sandbox-proof-export.json",
+        "size": 29779,
+        "mode": 420
+      },
+      {
+        "path": "examples/sandbox/tampered-aep-swap.json",
+        "size": 29771,
+        "mode": 420
+      },
+      {
+        "path": "examples/sandbox/tampered-roster.json",
+        "size": 29396,
+        "mode": 420
+      },
+      {
+        "path": "examples/sandbox/tampered-signature.json",
+        "size": 29779,
+        "mode": 420
+      },
+      {
+        "path": "examples/sandbox/unpinned-signer.json",
+        "size": 29779,
+        "mode": 420
+      },
+      {
+        "path": "http.d.ts",
+        "size": 9274,
+        "mode": 420
+      },
+      {
+        "path": "http.js",
+        "size": 20014,
+        "mode": 420
+      },
+      {
+        "path": "http.ts",
+        "size": 20014,
+        "mode": 420
+      },
+      {
+        "path": "index.d.ts",
+        "size": 12065,
+        "mode": 420
+      },
+      {
+        "path": "index.js",
+        "size": 34286,
+        "mode": 420
+      },
+      {
+        "path": "index.ts",
+        "size": 34286,
+        "mode": 420
+      },
+      {
+        "path": "package.json",
+        "size": 1322,
+        "mode": 420
+      },
+      {
+        "path": "trust/sandbox-key-set.json",
+        "size": 769,
+        "mode": 420
+      }
+    ],
+    "entryCount": 25,
+    "bundled": []
+  },
+  "artifacts": [
+    {
+      "path": ".github/workflows/public-sdk-conformance-gates.yml",
+      "role": "ci_gate",
+      "sha256": "3f833739b1658172920f494c3fb6dd2ac573a58abfdf2f02c3bb23fdee234495",
+      "bytes": 10061
+    },
+    {
+      "path": "engine/cmd/typescript-sdk-release-gen/main.go",
+      "role": "release_generator",
+      "sha256": "03dc24da2e39217dc7756418cd8cead5a6b0434bdfbcd61b23d97082c82c7c10",
+      "bytes": 23555
+    },
+    {
+      "path": "engine/cmd/typescript-sdk-release-gen/main_test.go",
+      "role": "release_generator_tests",
+      "sha256": "313a4fd147aeb8a0895db9151680f174856ee7a8a4643fa029af285ada29c214",
+      "bytes": 3597
+    },
+    {
+      "path": "sdk/adoption/pb-a5-003-006-beta-acceptance.v1.json",
+      "role": "adoption_acceptance_lock",
+      "sha256": "39ad7f13a6962f981f734750afd7d90d8034d49a89af96f50c78e731640a0f29",
+      "bytes": 14791
+    },
+    {
+      "path": "sdk/adoption/refresh-pb-a5-sdk-subject-hashes.mjs",
+      "role": "adoption_acceptance_generator",
+      "sha256": "47509c6430da6ff2c1480a731dd15acad7d2c54153aa679118079705e75ce39c",
+      "bytes": 4279
+    },
+    {
+      "path": "sdk/adoption/refresh-pb-a5-sdk-subject-hashes.test.mjs",
+      "role": "adoption_acceptance_generator_tests",
+      "sha256": "5d42751af71ab249f5d062859ca4783fd9dd92e814725633e6c842558eb0c0fc",
+      "bytes": 2221
+    },
+    {
+      "path": "sdk/shared-specs/agent-adapter-init.v1.json",
+      "role": "shared_conformance_spec",
+      "sha256": "850e137d4fd876ede049bbb102154e1043f258bea285049bfc6bc479d16b8700",
+      "bytes": 2207
+    },
+    {
+      "path": "sdk/shared-specs/agent-gateway-admission-examples.v1.json",
+      "role": "shared_conformance_spec",
+      "sha256": "30474dc9bf5b538a857efea6add0e2267cb224c6f85751f90220102711e8dccc",
+      "bytes": 17367
+    },
+    {
+      "path": "sdk/shared-specs/agent-gateway-live-runtime.v1.json",
+      "role": "shared_conformance_spec",
+      "sha256": "b5b94b1ed22c9802e8491664bd5f0f8b9e2b886502f394bf035b596bb4d9131d",
+      "bytes": 13354
+    },
+    {
+      "path": "sdk/shared-specs/public-sdk-conformance.v1.json",
+      "role": "shared_conformance_spec",
+      "sha256": "5fd38e03776f28a909cd073f71d850207ed20b3ec7a18f8e516137a1a2b6e6f5",
+      "bytes": 3758
+    },
+    {
+      "path": "sdk/shared-specs/receipt-proof-export-conformance.v1.json",
+      "role": "shared_conformance_spec",
+      "sha256": "5f005a57dbc2d61629481280f70385043f45f146c1d5533781f359e30a827cad",
+      "bytes": 5900
+    },
+    {
+      "path": "sdk/typescript/LICENSE",
+      "role": "npm_package_license",
+      "sha256": "a4089dd3ccba23485dfcfcf202242bd03f33b39c55dd6ddd93f43b3b257dd38a",
+      "bytes": 10188
+    },
+    {
+      "path": "sdk/typescript/README.md",
+      "role": "npm_package_documentation",
+      "sha256": "14049cb74813bf2f9f4d299df1d44feb434b9cc6d44adb4ba741a0aeb0cc4bc7",
+      "bytes": 9858
+    },
+    {
+      "path": "sdk/typescript/cli/intentrax.mjs",
+      "role": "npm_package_cli",
+      "sha256": "b5def378b07312e3bd232a6746e14cf0653bca48940483399e7b76c25872644a",
+      "bytes": 130906
+    },
+    {
+      "path": "sdk/typescript/conformance.test.mjs",
+      "role": "npm_package_conformance_tests",
+      "sha256": "8a9d4e44203485c20dabf1fe1937be8b77541fc154820088cbeb653f4d7099e1",
+      "bytes": 98004
+    },
+    {
+      "path": "sdk/typescript/examples/adapters/claude-code.md",
+      "role": "npm_package_example",
+      "sha256": "5b12900771e179e9a32806ad6210ad4bf27dd2f3f8bb4039ed2627b25aff45e9",
+      "bytes": 1190
+    },
+    {
+      "path": "sdk/typescript/examples/adapters/cursor.md",
+      "role": "npm_package_example",
+      "sha256": "c505180821263679895239e0322b9fce7889bc01ebef5b53332b93a62eaa3495",
+      "bytes": 1190
+    },
+    {
+      "path": "sdk/typescript/examples/adapters/langchain.md",
+      "role": "npm_package_example",
+      "sha256": "9ab8d0e0f274f99fecb8a48dce92b3ba8af4d37cf8e1d8933953615365424cc2",
+      "bytes": 1203
+    },
+    {
+      "path": "sdk/typescript/examples/adapters/langgraph.md",
+      "role": "npm_package_example",
+      "sha256": "fd9827719744992b060b6fe7f4b6c775860e4c8abbd6e23782b4b424227c8cb0",
+      "bytes": 1202
+    },
+    {
+      "path": "sdk/typescript/examples/adapters/mcp.md",
+      "role": "npm_package_example",
+      "sha256": "83c3792caaaceabe90eea3d620a43ed198328c5bfda4b2bd6aa72e80e5448f9b",
+      "bytes": 1196
+    },
+    {
+      "path": "sdk/typescript/examples/adapters/vercel-ai-sdk.md",
+      "role": "npm_package_example",
+      "sha256": "124fbe213d1a934035c38e57bfb9697508cffb04e38b44b1c3a7792f8456a496",
+      "bytes": 1216
+    },
+    {
+      "path": "sdk/typescript/examples/agent-gateway-admission.md",
+      "role": "npm_package_example",
+      "sha256": "257d2afb5f1198c4ac68106efb06f2bcd50fccada446089873bc17ede7ea8654",
+      "bytes": 3705
+    },
+    {
+      "path": "sdk/typescript/examples/one-command-init.md",
+      "role": "npm_package_example",
+      "sha256": "d654c2ad2317d839ce97bc3b8bb46d440d6e2432cacbc1933794c4efbe15b3e7",
+      "bytes": 4427
+    },
+    {
+      "path": "sdk/typescript/http.d.ts",
+      "role": "npm_package_types",
+      "sha256": "4ab31461926b332b49b9900775753498f74d6090a7eae63fda8d906ed03ffcff",
+      "bytes": 9274
+    },
+    {
+      "path": "sdk/typescript/http.js",
+      "role": "npm_package_runtime",
+      "sha256": "771758ff3b1dcee52bab5dfc3aaf02b649401938eb1d438e896c78a77b618054",
+      "bytes": 20014
+    },
+    {
+      "path": "sdk/typescript/http.ts",
+      "role": "npm_package_source",
+      "sha256": "b46260906bd8b3e614b2ad3e4cc385e509277f393151819d571add8441822ab3",
+      "bytes": 20014
+    },
+    {
+      "path": "sdk/typescript/index.d.ts",
+      "role": "npm_package_types",
+      "sha256": "8fd86411abfbecd88e75d8e1547e397f3158c45ea9705546653cc0588957e983",
+      "bytes": 12065
+    },
+    {
+      "path": "sdk/typescript/index.js",
+      "role": "npm_package_runtime",
+      "sha256": "38eb81ae77aad33a791fac87422bc3b3a0f34677b9ddd5c1c9872186294cd8a8",
+      "bytes": 34286
+    },
+    {
+      "path": "sdk/typescript/index.ts",
+      "role": "npm_package_source",
+      "sha256": "38eb81ae77aad33a791fac87422bc3b3a0f34677b9ddd5c1c9872186294cd8a8",
+      "bytes": 34286
+    },
+    {
+      "path": "sdk/typescript/live-runtime.test.mjs",
+      "role": "npm_package_live_runtime_tests",
+      "sha256": "cc2849238b12210a4452d06cb1d8a8b3dc408c1d559121638e6d3a8a790397ae",
+      "bytes": 1866
+    },
+    {
+      "path": "sdk/typescript/package-lock.json",
+      "role": "npm_install_lock",
+      "sha256": "0d2721b1f083b53c246b990c2b05bf8b4b12e76886f5b53a91a392fac062ff1b",
+      "bytes": 338
+    },
+    {
+      "path": "sdk/typescript/package.json",
+      "role": "npm_package_manifest",
+      "sha256": "eaeb3f036c0d9f6ea2e075bd3bb8819b4d4da102f73be39b1683f9175dab74c8",
+      "bytes": 1322
+    },
+    {
+      "path": "verification/external_verifiers/pb_a5_003_006_beta_acceptance.py",
+      "role": "adoption_acceptance_verifier",
+      "sha256": "c1d7060d76d66d53063b184f18d7a149917a34bd589869acb285447f2124c8ff",
+      "bytes": 10208
+    }
+  ],
+  "release_hash": "4d24e41f489f0944510763c87a842d52174a2c2adf07ec66ab1577a913d74b63"
+}

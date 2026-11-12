@@ -1,0 +1,49 @@
+{
+  "name": "@intentrax/mcp-server",
+  "version": "0.1.1",
+  "description": "Read-only Model Context Protocol server for Intentrax proof verification. Gives coding agents (Claude Code, Cursor, VS Code, Windsurf, Kiro, Codex, Gemini CLI, Qwen Code, Zed) two safe tools: verify a public proof, and read a tenant-scoped proof. Never executes, admits, signs, or writes.",
+  "type": "module",
+  "bin": {
+    "intentrax-mcp-server": "intentrax-mcp-server.mjs"
+  },
+  "files": [
+    "intentrax-mcp-server.mjs",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "esbuild stdio.ts --bundle --platform=node --format=esm --target=node20 --legal-comments=none --outfile=intentrax-mcp-server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://www.intentrax.com/developers",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Intentrax/agent-toolkit-for-intentrax.git",
+    "directory": "packages/mcp-server"
+  },
+  "bugs": {
+    "url": "https://github.com/Intentrax/agent-toolkit-for-intentrax/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "intentrax",
+    "proof",
+    "verification",
+    "execution-assurance",
+    "claude-code",
+    "cursor",
+    "kiro",
+    "codex",
+    "ai-agents"
+  ],
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

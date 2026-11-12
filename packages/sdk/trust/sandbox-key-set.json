@@ -1,0 +1,26 @@
+{
+  "issuer": "Intentrax",
+  "key_set_id": "intentrax-sandbox-sample",
+  "keys": [
+    {
+      "algorithm": "ED25519",
+      "environment": "sandbox",
+      "key_id": "sandbox-sample-a",
+      "key_version": "1",
+      "public_key_material": "3c34111ac7e66035956ea4bd4f88abd8d76e986589e787af7ab07dcc2190f635",
+      "status": "ACTIVE",
+      "trust_bearing": false
+    },
+    {
+      "algorithm": "ED25519",
+      "environment": "sandbox",
+      "key_id": "sandbox-sample-b",
+      "key_version": "1",
+      "public_key_material": "14a724139d14b40a6c04a962c20570f73476249d22e720797b997f268d4ca566",
+      "status": "ACTIVE",
+      "trust_bearing": false
+    }
+  ],
+  "published_at": "2026-11-12T00:00:00Z",
+  "schema_version": "intentrax.trust.published_key_set/1.0"
+}

@@ -1,0 +1,64 @@
+{
+  "name": "@intentrax/sdk",
+  "version": "1.1.0",
+  "description": "Intentrax deterministic public SDK for proof verification and API-wrapper execution.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "node conformance.test.mjs"
+  },
+  "bin": {
+    "intentrax": "./cli/intentrax.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./http": {
+      "types": "./http.d.ts",
+      "default": "./http.js"
+    }
+  },
+  "types": "./index.d.ts",
+  "files": [
+    "LICENSE",
+    "cli/intentrax.mjs",
+    "examples",
+    "index.js",
+    "index.ts",
+    "index.d.ts",
+    "http.js",
+    "http.ts",
+    "http.d.ts",
+    "README.md",
+    "trust"
+  ],
+  "keywords": [
+    "intentrax",
+    "aep",
+    "eeo",
+    "proof-verification",
+    "deterministic-ai",
+    "mcp"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Intentrax/agent-toolkit-for-intentrax.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://www.intentrax.com/developers",
+  "bugs": {
+    "url": "https://www.intentrax.com/developers"
+  },
+  "intentrax": {
+    "sharedSpec": "../shared-specs/public-sdk-conformance.v1.json"
+  }
+}

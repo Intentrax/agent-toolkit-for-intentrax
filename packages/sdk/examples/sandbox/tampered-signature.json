@@ -1,0 +1,318 @@
+{
+  "hash_algorithm": "SHA-256",
+  "proof_record": {
+    "admission_hash": "674a804529c9b5ea2bf4476226dc44b7653578fd5a7631c2365f77a6857ccf47",
+    "aep_hash": "5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1",
+    "append_only": true,
+    "audit_hash": "c65631372443cf219c38259a4886cca12783219dafa763135dbf8a472a1c90a4",
+    "canonical_aep_json": "{\"aep_version\":\"aep/1.0\",\"envelope_version\":\"aep-envelope/1.0\",\"proof_type\":\"AUTONOMOUS_EXECUTION_PROOF\",\"execution_id\":\"exec-sandbox-sample-001\",\"lineage\":{\"eeo_hash\":\"02d06e7f791c4cce71a961003e36648644b9404115b256e8c56f6489d8c744be\",\"decision_hash\":\"e6afcfe20a3afca7fa78a40cb87eb076b0b75a30cc443aef35961fd5636b0fda\",\"trace_hash\":\"6f7430a88b8ba4532aadc50a2b50f8ab7dc33b0be4996fea35ae2dd4b102b1d0\",\"execution_hash\":\"2c0704dbc583993a16053f20c1709e9c90b8e610eebc0b18f9fcf070e2c66e2f\",\"execution_integrity_lock_hash\":\"63e9e2a75a6e8081190eca8e57f6c76582cc23915eeb82fc657d1bdc9b37edaf\",\"integrity_lock_hash\":\"249c223ad5eda9a6e0ea9205f91dab9298bbd436a665c7487cd7ce09c0d33f26\"},\"policy\":{\"policy_id\":\"policy.sandbox-sample\",\"policy_version\":\"1.0.0\",\"decision_ref\":\"decision/sandbox-sample/001\"},\"authority\":{\"principal_id\":\"principal-sandbox-sample\",\"authority_binding_ref\":\"authority/sandbox-sample/001\",\"auth_context_hash\":\"99d3e1be2d9855cb8f1a07a1b9c6462eddb6333ed4b8447d74501f82370642bc\"},\"context\":{\"tenant_id\":\"tenant-sandbox-sample\",\"environment\":\"DEV\",\"runtime_version\":\"go1.26\",\"producer\":\"intentrax-proof-engine\"},\"boundary_refs\":{\"execution_context_hash\":\"90eb2b1ee568c147f2dddc8c7f163bb40fcfbffe8301b0899875725ef4b0b47b\",\"execution_constraints_hash\":\"42ec8bd382782db7a487ba5b734c3d3ae0a35efe3cf701085aca6199ff50b5bf\",\"execution_processing_hash\":\"2c0704dbc583993a16053f20c1709e9c90b8e610eebc0b18f9fcf070e2c66e2f\",\"policy_result_hash\":\"240a415e9232a009cdca31c8e8a46070c65a0cc95eb20c5a70413739bd086381\",\"authority_binding_hash\":\"5d134bb1898566c43b4a129ec8718c75e1b5902bdefed6f81c52ad97c59f0571\",\"canonical_decision_output_hash\":\"66791debc719e712800a25ab5634d87fa0d326d4c94ea84071b5e4a5b3df3c5f\",\"canonical_decision_json_hash\":\"c1998218f9526a526f7bcaeafa028481f769b6e4f590afc4a6384b97f1345721\",\"decision_trace_hash\":\"9b5b9450c9a459faae58391ea37067cff861e1a1aaede23594d8bce520d127da\",\"decision_integrity_hash\":\"d77ce9a0488658abae29ff64378ba577b1d14d91af823b07bfa84837a2e7acca\",\"integrity_validation_hash\":\"fb040dc8e3ba81ed6985094b0de45b028b0e2cbe34dafc800842598b6ccca624\",\"integrity_enforcement_hash\":\"04c6522d6cc0a56938cd5340a2bb688ec240784644610ab2ec19b21441f40143\",\"integrity_trace_hash\":\"96d54bdb244fbb8ef3a19ebd389e352511dd6011447e4cf619592bd03daedb1c\"},\"integrity\":{\"transformation_hash\":\"e8e005ec7c377bccf2ec4ed169100a92fc0eef0ffe73f8311c07e3be54476d4b\",\"input_hash\":\"4da928d5e67c51e62bb95c8b6f124fd831f1fa6cfe782a3d6b560f41ea6fff74\",\"trace_hash\":\"cc44715e4c28a9201f2aca7cf2a607f2f4019ab08453985d649c7277b6f022ee\",\"hash_algorithm\":\"SHA-256\"}}",
+    "execution_id": "exec-sandbox-sample-001",
+    "hash_algorithm": "SHA-256",
+    "lookup_ref": "intentrax://registry/proofs/tenant-sandbox-sample/5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1",
+    "migration_id": "0001_append_only_registry_foundation",
+    "record_hash": "d101901909d67825f90367ed5ab9e58b877e4e8974b2328a883f3b6981d3999f",
+    "record_type": "REGISTRY_BACKED_PROOF",
+    "registry_entry": {
+      "aep_hash": "5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1",
+      "canonical_aep_json": "{\"aep_version\":\"aep/1.0\",\"envelope_version\":\"aep-envelope/1.0\",\"proof_type\":\"AUTONOMOUS_EXECUTION_PROOF\",\"execution_id\":\"exec-sandbox-sample-001\",\"lineage\":{\"eeo_hash\":\"02d06e7f791c4cce71a961003e36648644b9404115b256e8c56f6489d8c744be\",\"decision_hash\":\"e6afcfe20a3afca7fa78a40cb87eb076b0b75a30cc443aef35961fd5636b0fda\",\"trace_hash\":\"6f7430a88b8ba4532aadc50a2b50f8ab7dc33b0be4996fea35ae2dd4b102b1d0\",\"execution_hash\":\"2c0704dbc583993a16053f20c1709e9c90b8e610eebc0b18f9fcf070e2c66e2f\",\"execution_integrity_lock_hash\":\"63e9e2a75a6e8081190eca8e57f6c76582cc23915eeb82fc657d1bdc9b37edaf\",\"integrity_lock_hash\":\"249c223ad5eda9a6e0ea9205f91dab9298bbd436a665c7487cd7ce09c0d33f26\"},\"policy\":{\"policy_id\":\"policy.sandbox-sample\",\"policy_version\":\"1.0.0\",\"decision_ref\":\"decision/sandbox-sample/001\"},\"authority\":{\"principal_id\":\"principal-sandbox-sample\",\"authority_binding_ref\":\"authority/sandbox-sample/001\",\"auth_context_hash\":\"99d3e1be2d9855cb8f1a07a1b9c6462eddb6333ed4b8447d74501f82370642bc\"},\"context\":{\"tenant_id\":\"tenant-sandbox-sample\",\"environment\":\"DEV\",\"runtime_version\":\"go1.26\",\"producer\":\"intentrax-proof-engine\"},\"boundary_refs\":{\"execution_context_hash\":\"90eb2b1ee568c147f2dddc8c7f163bb40fcfbffe8301b0899875725ef4b0b47b\",\"execution_constraints_hash\":\"42ec8bd382782db7a487ba5b734c3d3ae0a35efe3cf701085aca6199ff50b5bf\",\"execution_processing_hash\":\"2c0704dbc583993a16053f20c1709e9c90b8e610eebc0b18f9fcf070e2c66e2f\",\"policy_result_hash\":\"240a415e9232a009cdca31c8e8a46070c65a0cc95eb20c5a70413739bd086381\",\"authority_binding_hash\":\"5d134bb1898566c43b4a129ec8718c75e1b5902bdefed6f81c52ad97c59f0571\",\"canonical_decision_output_hash\":\"66791debc719e712800a25ab5634d87fa0d326d4c94ea84071b5e4a5b3df3c5f\",\"canonical_decision_json_hash\":\"c1998218f9526a526f7bcaeafa028481f769b6e4f590afc4a6384b97f1345721\",\"decision_trace_hash\":\"9b5b9450c9a459faae58391ea37067cff861e1a1aaede23594d8bce520d127da\",\"decision_integrity_hash\":\"d77ce9a0488658abae29ff64378ba577b1d14d91af823b07bfa84837a2e7acca\",\"integrity_validation_hash\":\"fb040dc8e3ba81ed6985094b0de45b028b0e2cbe34dafc800842598b6ccca624\",\"integrity_enforcement_hash\":\"04c6522d6cc0a56938cd5340a2bb688ec240784644610ab2ec19b21441f40143\",\"integrity_trace_hash\":\"96d54bdb244fbb8ef3a19ebd389e352511dd6011447e4cf619592bd03daedb1c\"},\"integrity\":{\"transformation_hash\":\"e8e005ec7c377bccf2ec4ed169100a92fc0eef0ffe73f8311c07e3be54476d4b\",\"input_hash\":\"4da928d5e67c51e62bb95c8b6f124fd831f1fa6cfe782a3d6b560f41ea6fff74\",\"trace_hash\":\"cc44715e4c28a9201f2aca7cf2a607f2f4019ab08453985d649c7277b6f022ee\",\"hash_algorithm\":\"SHA-256\"}}",
+      "execution_id": "exec-sandbox-sample-001",
+      "index_keys": {
+        "aep_hash": "5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1",
+        "execution_id": "exec-sandbox-sample-001",
+        "policy_id": "policy.sandbox-sample",
+        "signer_id": "principal-sandbox-sample",
+        "tenant_id": "tenant-sandbox-sample",
+        "trust_status": "VALID"
+      },
+      "integrity": {
+        "hash_algorithm": "SHA-256",
+        "input_hash": "395b85f6b0d7d0d3614fa22a1807dc2146eff8e34e0ff88f1de8a9f187e901a1",
+        "output_hash": "710449dd8950c594a65723f7671b180695ac4df677ece28d012ae8c479fe011d",
+        "trace_hash": ""
+      },
+      "policy_id": "policy.sandbox-sample",
+      "record_version": "registry-record/1.0",
+      "registry_entry_id": "5e418820af1cf7da2ef3fae2d62cda1d15c37727573db1afd15d129bc87c87cb",
+      "schema_version": "intentrax.registry.entry/1.0",
+      "signature_hash": "775149e2b082c6de1688aa75b45b4bd30f1d69cd3b6e4a76b8a5f0162430775c",
+      "signer_id": "principal-sandbox-sample",
+      "tenant_id": "tenant-sandbox-sample",
+      "trust_integrity_lock": "04fa81345ed44289e7e9f40abbe8d557c172084d25d37f3b765802ab39e69d80",
+      "trust_status": "VALID",
+      "trust_trace_hash": "04fa81345ed44289e7e9f40abbe8d557c172084d25d37f3b765802ab39e69d80",
+      "verification_hash": "b3a8cbf863f744a431c6d7076c15b395e89887eff9bb71f4f2db57bcb72fc715"
+    },
+    "registry_entry_hash": "710449dd8950c594a65723f7671b180695ac4df677ece28d012ae8c479fe011d",
+    "registry_entry_id": "5e418820af1cf7da2ef3fae2d62cda1d15c37727573db1afd15d129bc87c87cb",
+    "registry_output_hash": "eb36c1f4ec1488114c01e58e3e6a4ccc7be8913dda71e61074c895bc694bca8a",
+    "replay_hash": "e53bbc2416de405d1758a9a46e0287122eab3b02386e5d19c9d0f95396afa122",
+    "schema_version": "intentrax.registry.persistence_foundation/1.0",
+    "signature_hash": "775149e2b082c6de1688aa75b45b4bd30f1d69cd3b6e4a76b8a5f0162430775c",
+    "store_mode": "POSTGRESQL_APPEND_ONLY",
+    "tenant_id": "tenant-sandbox-sample",
+    "trust_status": "VALID",
+    "verification_bundle": {
+      "bundle_hash": "23d17cf0928c186a107283de81c68abed808721eb04f7cf24ed8c6da2e7678db",
+      "hash_algorithm": "SHA-256",
+      "key_binding": {
+        "integrity": {
+          "hash_algorithm": "SHA-256",
+          "input_hash": "695aec55ab4ee0a02cb3c89f5ee5c69ae5606dbb63620bf16a26114d705c3947",
+          "output_hash": "1bfa837687a6cf5646b592ef9785bde2163efa3390a486309366bdc117260752",
+          "trace_hash": "f4e7b914adcc8601a1655b6555b4cf539573fc18c9c6cbbd64a7bd3c6d1b4c8a"
+        },
+        "keys": [
+          {
+            "algorithm": "ED25519",
+            "key_binding_hash": "7801c2e78554af3c9235b4d73a90e19168d55da385cb5a14f2924c8f3dd727f5",
+            "key_id": "sandbox-sample-a",
+            "key_material_hash": "04291365375da03bdf35f5bf62b96f1694db6d2dc646438a9d9b8153b6b55a1d",
+            "key_status": "ACTIVE",
+            "key_version": "1",
+            "principal_id": "principal-sandbox-sample",
+            "public_key_hash": "cf570bcd7b7a81aa5255274a88c30d90f5caf434f12c6eb240280c3e525fb158"
+          },
+          {
+            "algorithm": "ED25519",
+            "key_binding_hash": "85c827129d307805fff439381322ff9172dfd0fba71e51c3336515f33ebf6cf0",
+            "key_id": "sandbox-sample-b",
+            "key_material_hash": "68975c684feaae1d616e7190729b8c47812dac32ebe974c1b15dd3cacc37f3eb",
+            "key_status": "ACTIVE",
+            "key_version": "1",
+            "principal_id": "principal-sandbox-sample",
+            "public_key_hash": "6d8654e62d403ecc77ca1f0310c88c2b02cf7122a0b9954a24f89d9902baccc6"
+          }
+        ],
+        "quorum": {
+          "required_signatures": 2,
+          "total_signers": 2
+        },
+        "schema_version": "intentrax.trust.key_binding/1.0",
+        "signer_identity": {
+          "identity_binding_ref": "identity/sandbox-sample/001",
+          "principal_id": "principal-sandbox-sample",
+          "principal_type": "AGENT"
+        }
+      },
+      "key_references": [
+        {
+          "algorithm": "ED25519",
+          "deterministic_key_handle": "sandbox://sandbox-sample-a/1",
+          "key_id": "sandbox-sample-a",
+          "key_status": "ACTIVE",
+          "key_version": "1",
+          "principal_id": "principal-sandbox-sample",
+          "public_key_material": "3c34111ac7e66035956ea4bd4f88abd8d76e986589e787af7ab07dcc2190f635"
+        },
+        {
+          "algorithm": "ED25519",
+          "deterministic_key_handle": "sandbox://sandbox-sample-b/1",
+          "key_id": "sandbox-sample-b",
+          "key_status": "ACTIVE",
+          "key_version": "1",
+          "principal_id": "principal-sandbox-sample",
+          "public_key_material": "14a724139d14b40a6c04a962c20570f73476249d22e720797b997f268d4ca566"
+        }
+      ],
+      "payload": {
+        "canonical_payload_json": "{\"payload_version\":\"intentrax.trust.signature_payload/1.0\",\"canonical_aep_json\":\"{\\\"aep_version\\\":\\\"aep/1.0\\\",\\\"envelope_version\\\":\\\"aep-envelope/1.0\\\",\\\"proof_type\\\":\\\"AUTONOMOUS_EXECUTION_PROOF\\\",\\\"execution_id\\\":\\\"exec-sandbox-sample-001\\\",\\\"lineage\\\":{\\\"eeo_hash\\\":\\\"02d06e7f791c4cce71a961003e36648644b9404115b256e8c56f6489d8c744be\\\",\\\"decision_hash\\\":\\\"e6afcfe20a3afca7fa78a40cb87eb076b0b75a30cc443aef35961fd5636b0fda\\\",\\\"trace_hash\\\":\\\"6f7430a88b8ba4532aadc50a2b50f8ab7dc33b0be4996fea35ae2dd4b102b1d0\\\",\\\"execution_hash\\\":\\\"2c0704dbc583993a16053f20c1709e9c90b8e610eebc0b18f9fcf070e2c66e2f\\\",\\\"execution_integrity_lock_hash\\\":\\\"63e9e2a75a6e8081190eca8e57f6c76582cc23915eeb82fc657d1bdc9b37edaf\\\",\\\"integrity_lock_hash\\\":\\\"249c223ad5eda9a6e0ea9205f91dab9298bbd436a665c7487cd7ce09c0d33f26\\\"},\\\"policy\\\":{\\\"policy_id\\\":\\\"policy.sandbox-sample\\\",\\\"policy_version\\\":\\\"1.0.0\\\",\\\"decision_ref\\\":\\\"decision/sandbox-sample/001\\\"},\\\"authority\\\":{\\\"principal_id\\\":\\\"principal-sandbox-sample\\\",\\\"authority_binding_ref\\\":\\\"authority/sandbox-sample/001\\\",\\\"auth_context_hash\\\":\\\"99d3e1be2d9855cb8f1a07a1b9c6462eddb6333ed4b8447d74501f82370642bc\\\"},\\\"context\\\":{\\\"tenant_id\\\":\\\"tenant-sandbox-sample\\\",\\\"environment\\\":\\\"DEV\\\",\\\"runtime_version\\\":\\\"go1.26\\\",\\\"producer\\\":\\\"intentrax-proof-engine\\\"},\\\"boundary_refs\\\":{\\\"execution_context_hash\\\":\\\"90eb2b1ee568c147f2dddc8c7f163bb40fcfbffe8301b0899875725ef4b0b47b\\\",\\\"execution_constraints_hash\\\":\\\"42ec8bd382782db7a487ba5b734c3d3ae0a35efe3cf701085aca6199ff50b5bf\\\",\\\"execution_processing_hash\\\":\\\"2c0704dbc583993a16053f20c1709e9c90b8e610eebc0b18f9fcf070e2c66e2f\\\",\\\"policy_result_hash\\\":\\\"240a415e9232a009cdca31c8e8a46070c65a0cc95eb20c5a70413739bd086381\\\",\\\"authority_binding_hash\\\":\\\"5d134bb1898566c43b4a129ec8718c75e1b5902bdefed6f81c52ad97c59f0571\\\",\\\"canonical_decision_output_hash\\\":\\\"66791debc719e712800a25ab5634d87fa0d326d4c94ea84071b5e4a5b3df3c5f\\\",\\\"canonical_decision_json_hash\\\":\\\"c1998218f9526a526f7bcaeafa028481f769b6e4f590afc4a6384b97f1345721\\\",\\\"decision_trace_hash\\\":\\\"9b5b9450c9a459faae58391ea37067cff861e1a1aaede23594d8bce520d127da\\\",\\\"decision_integrity_hash\\\":\\\"d77ce9a0488658abae29ff64378ba577b1d14d91af823b07bfa84837a2e7acca\\\",\\\"integrity_validation_hash\\\":\\\"fb040dc8e3ba81ed6985094b0de45b028b0e2cbe34dafc800842598b6ccca624\\\",\\\"integrity_enforcement_hash\\\":\\\"04c6522d6cc0a56938cd5340a2bb688ec240784644610ab2ec19b21441f40143\\\",\\\"integrity_trace_hash\\\":\\\"96d54bdb244fbb8ef3a19ebd389e352511dd6011447e4cf619592bd03daedb1c\\\"},\\\"integrity\\\":{\\\"transformation_hash\\\":\\\"e8e005ec7c377bccf2ec4ed169100a92fc0eef0ffe73f8311c07e3be54476d4b\\\",\\\"input_hash\\\":\\\"4da928d5e67c51e62bb95c8b6f124fd831f1fa6cfe782a3d6b560f41ea6fff74\\\",\\\"trace_hash\\\":\\\"cc44715e4c28a9201f2aca7cf2a607f2f4019ab08453985d649c7277b6f022ee\\\",\\\"hash_algorithm\\\":\\\"SHA-256\\\"}}\",\"aep_hash\":\"5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1\"}",
+        "integrity": {
+          "hash_algorithm": "SHA-256",
+          "input_hash": "0c9387199047343ab2dd62a58e43c3337e83d30e238a07f1a47e7bcc2684ad3b",
+          "output_hash": "869f5e4a96f05882b03c2e4878d1de7de67ca166b688f857636c3bd1da427724",
+          "trace_hash": "f2bcdf72c0e1d0e2213ac3bfcc314a5c1dc89bfb98c57e472c28aa227cb1c7a4"
+        },
+        "payload": {
+          "aep_hash": "5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1",
+          "canonical_aep_json": "{\"aep_version\":\"aep/1.0\",\"envelope_version\":\"aep-envelope/1.0\",\"proof_type\":\"AUTONOMOUS_EXECUTION_PROOF\",\"execution_id\":\"exec-sandbox-sample-001\",\"lineage\":{\"eeo_hash\":\"02d06e7f791c4cce71a961003e36648644b9404115b256e8c56f6489d8c744be\",\"decision_hash\":\"e6afcfe20a3afca7fa78a40cb87eb076b0b75a30cc443aef35961fd5636b0fda\",\"trace_hash\":\"6f7430a88b8ba4532aadc50a2b50f8ab7dc33b0be4996fea35ae2dd4b102b1d0\",\"execution_hash\":\"2c0704dbc583993a16053f20c1709e9c90b8e610eebc0b18f9fcf070e2c66e2f\",\"execution_integrity_lock_hash\":\"63e9e2a75a6e8081190eca8e57f6c76582cc23915eeb82fc657d1bdc9b37edaf\",\"integrity_lock_hash\":\"249c223ad5eda9a6e0ea9205f91dab9298bbd436a665c7487cd7ce09c0d33f26\"},\"policy\":{\"policy_id\":\"policy.sandbox-sample\",\"policy_version\":\"1.0.0\",\"decision_ref\":\"decision/sandbox-sample/001\"},\"authority\":{\"principal_id\":\"principal-sandbox-sample\",\"authority_binding_ref\":\"authority/sandbox-sample/001\",\"auth_context_hash\":\"99d3e1be2d9855cb8f1a07a1b9c6462eddb6333ed4b8447d74501f82370642bc\"},\"context\":{\"tenant_id\":\"tenant-sandbox-sample\",\"environment\":\"DEV\",\"runtime_version\":\"go1.26\",\"producer\":\"intentrax-proof-engine\"},\"boundary_refs\":{\"execution_context_hash\":\"90eb2b1ee568c147f2dddc8c7f163bb40fcfbffe8301b0899875725ef4b0b47b\",\"execution_constraints_hash\":\"42ec8bd382782db7a487ba5b734c3d3ae0a35efe3cf701085aca6199ff50b5bf\",\"execution_processing_hash\":\"2c0704dbc583993a16053f20c1709e9c90b8e610eebc0b18f9fcf070e2c66e2f\",\"policy_result_hash\":\"240a415e9232a009cdca31c8e8a46070c65a0cc95eb20c5a70413739bd086381\",\"authority_binding_hash\":\"5d134bb1898566c43b4a129ec8718c75e1b5902bdefed6f81c52ad97c59f0571\",\"canonical_decision_output_hash\":\"66791debc719e712800a25ab5634d87fa0d326d4c94ea84071b5e4a5b3df3c5f\",\"canonical_decision_json_hash\":\"c1998218f9526a526f7bcaeafa028481f769b6e4f590afc4a6384b97f1345721\",\"decision_trace_hash\":\"9b5b9450c9a459faae58391ea37067cff861e1a1aaede23594d8bce520d127da\",\"decision_integrity_hash\":\"d77ce9a0488658abae29ff64378ba577b1d14d91af823b07bfa84837a2e7acca\",\"integrity_validation_hash\":\"fb040dc8e3ba81ed6985094b0de45b028b0e2cbe34dafc800842598b6ccca624\",\"integrity_enforcement_hash\":\"04c6522d6cc0a56938cd5340a2bb688ec240784644610ab2ec19b21441f40143\",\"integrity_trace_hash\":\"96d54bdb244fbb8ef3a19ebd389e352511dd6011447e4cf619592bd03daedb1c\"},\"integrity\":{\"transformation_hash\":\"e8e005ec7c377bccf2ec4ed169100a92fc0eef0ffe73f8311c07e3be54476d4b\",\"input_hash\":\"4da928d5e67c51e62bb95c8b6f124fd831f1fa6cfe782a3d6b560f41ea6fff74\",\"trace_hash\":\"cc44715e4c28a9201f2aca7cf2a607f2f4019ab08453985d649c7277b6f022ee\",\"hash_algorithm\":\"SHA-256\"}}",
+          "payload_version": "intentrax.trust.signature_payload/1.0"
+        },
+        "payload_byte_length": 2866,
+        "payload_hash": "42733f43cbfb9b666413f60877289bea6243b203ce3c1841c341229a9e738a78",
+        "schema_version": "intentrax.trust.signature_payload_result/1.0"
+      },
+      "registry_output": {
+        "aep_hash": "5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1",
+        "audit_result": {
+          "anomalies": [],
+          "audit_hash": "2b4cabff0cb14df002dbf48b6ff9cbb113a6e36b78e92b5ef75f3c3ff5b24489",
+          "audit_status": "PASS",
+          "checked_artifacts": [
+            {
+              "artifact_hash": "674a804529c9b5ea2bf4476226dc44b7653578fd5a7631c2365f77a6857ccf47",
+              "component": "admission"
+            },
+            {
+              "artifact_hash": "89e5f7fb3612c17fb76fd9d62b400337d6b698bca65bc5a9aa5a166664f3a4ff",
+              "component": "observability"
+            },
+            {
+              "artifact_hash": "78497e725eaced70a5dbfa7b9f67c1d882351c5bdbb476c03ad0670585b4e459",
+              "component": "projection"
+            },
+            {
+              "artifact_hash": "e53bbc2416de405d1758a9a46e0287122eab3b02386e5d19c9d0f95396afa122",
+              "component": "replay"
+            },
+            {
+              "artifact_hash": "1ffcd7036d00aaef91832d046f54db3a7f9416b5ab86e5a7f9eaecae10e83666",
+              "component": "retrieval"
+            },
+            {
+              "artifact_hash": "a0c1dd17e3cdc3ee93f0ba2f586af99e42889ef20c475d5d8f29430cb4343086",
+              "component": "verification"
+            }
+          ],
+          "integrity": {
+            "hash_algorithm": "SHA-256",
+            "input_hash": "73a34aab4dfda0217462fffb000b716633799119a250490479d475f2a2fdb9ed",
+            "output_hash": "c65631372443cf219c38259a4886cca12783219dafa763135dbf8a472a1c90a4",
+            "trace_hash": "972a7faca238ac8da1fa496f1fb4f9d140d2b4e9c13b8236a859e7f99e92f589"
+          },
+          "registry_output_ready": true,
+          "schema_version": "intentrax.registry.audit/1.0"
+        },
+        "canonical_aep_json": "{\"aep_version\":\"aep/1.0\",\"envelope_version\":\"aep-envelope/1.0\",\"proof_type\":\"AUTONOMOUS_EXECUTION_PROOF\",\"execution_id\":\"exec-sandbox-sample-001\",\"lineage\":{\"eeo_hash\":\"02d06e7f791c4cce71a961003e36648644b9404115b256e8c56f6489d8c744be\",\"decision_hash\":\"e6afcfe20a3afca7fa78a40cb87eb076b0b75a30cc443aef35961fd5636b0fda\",\"trace_hash\":\"6f7430a88b8ba4532aadc50a2b50f8ab7dc33b0be4996fea35ae2dd4b102b1d0\",\"execution_hash\":\"2c0704dbc583993a16053f20c1709e9c90b8e610eebc0b18f9fcf070e2c66e2f\",\"execution_integrity_lock_hash\":\"63e9e2a75a6e8081190eca8e57f6c76582cc23915eeb82fc657d1bdc9b37edaf\",\"integrity_lock_hash\":\"249c223ad5eda9a6e0ea9205f91dab9298bbd436a665c7487cd7ce09c0d33f26\"},\"policy\":{\"policy_id\":\"policy.sandbox-sample\",\"policy_version\":\"1.0.0\",\"decision_ref\":\"decision/sandbox-sample/001\"},\"authority\":{\"principal_id\":\"principal-sandbox-sample\",\"authority_binding_ref\":\"authority/sandbox-sample/001\",\"auth_context_hash\":\"99d3e1be2d9855cb8f1a07a1b9c6462eddb6333ed4b8447d74501f82370642bc\"},\"context\":{\"tenant_id\":\"tenant-sandbox-sample\",\"environment\":\"DEV\",\"runtime_version\":\"go1.26\",\"producer\":\"intentrax-proof-engine\"},\"boundary_refs\":{\"execution_context_hash\":\"90eb2b1ee568c147f2dddc8c7f163bb40fcfbffe8301b0899875725ef4b0b47b\",\"execution_constraints_hash\":\"42ec8bd382782db7a487ba5b734c3d3ae0a35efe3cf701085aca6199ff50b5bf\",\"execution_processing_hash\":\"2c0704dbc583993a16053f20c1709e9c90b8e610eebc0b18f9fcf070e2c66e2f\",\"policy_result_hash\":\"240a415e9232a009cdca31c8e8a46070c65a0cc95eb20c5a70413739bd086381\",\"authority_binding_hash\":\"5d134bb1898566c43b4a129ec8718c75e1b5902bdefed6f81c52ad97c59f0571\",\"canonical_decision_output_hash\":\"66791debc719e712800a25ab5634d87fa0d326d4c94ea84071b5e4a5b3df3c5f\",\"canonical_decision_json_hash\":\"c1998218f9526a526f7bcaeafa028481f769b6e4f590afc4a6384b97f1345721\",\"decision_trace_hash\":\"9b5b9450c9a459faae58391ea37067cff861e1a1aaede23594d8bce520d127da\",\"decision_integrity_hash\":\"d77ce9a0488658abae29ff64378ba577b1d14d91af823b07bfa84837a2e7acca\",\"integrity_validation_hash\":\"fb040dc8e3ba81ed6985094b0de45b028b0e2cbe34dafc800842598b6ccca624\",\"integrity_enforcement_hash\":\"04c6522d6cc0a56938cd5340a2bb688ec240784644610ab2ec19b21441f40143\",\"integrity_trace_hash\":\"96d54bdb244fbb8ef3a19ebd389e352511dd6011447e4cf619592bd03daedb1c\"},\"integrity\":{\"transformation_hash\":\"e8e005ec7c377bccf2ec4ed169100a92fc0eef0ffe73f8311c07e3be54476d4b\",\"input_hash\":\"4da928d5e67c51e62bb95c8b6f124fd831f1fa6cfe782a3d6b560f41ea6fff74\",\"trace_hash\":\"cc44715e4c28a9201f2aca7cf2a607f2f4019ab08453985d649c7277b6f022ee\",\"hash_algorithm\":\"SHA-256\"}}",
+        "execution_id": "exec-sandbox-sample-001",
+        "index_keys": {
+          "aep_hash": "5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1",
+          "execution_id": "exec-sandbox-sample-001",
+          "policy_id": "policy.sandbox-sample",
+          "signer_id": "principal-sandbox-sample",
+          "tenant_id": "tenant-sandbox-sample",
+          "trust_status": "VALID"
+        },
+        "integrity_lock": "eb36c1f4ec1488114c01e58e3e6a4ccc7be8913dda71e61074c895bc694bca8a",
+        "projection_views": {
+          "integrity": {
+            "hash_algorithm": "SHA-256",
+            "input_hash": "ab56dd3349202e2af19587bbaee6ebbac3038df05860ddc78602ad6e2814e1d1",
+            "output_hash": "78497e725eaced70a5dbfa7b9f67c1d882351c5bdbb476c03ad0670585b4e459",
+            "trace_hash": "2db27391088695bd3a5f0e6eac597bf3bec557661b8cd40a7ead07d280b91160"
+          },
+          "projection_hash": "a390d44ea9e9b0a1ce3f8999ec6b997e14617796a8ccb3b37d7fb92ef9c72844",
+          "result_count": 1,
+          "rows": [
+            {
+              "aep_hash": "5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1",
+              "execution_id": "exec-sandbox-sample-001",
+              "policy_id": "policy.sandbox-sample",
+              "registry_entry_id": "5e418820af1cf7da2ef3fae2d62cda1d15c37727573db1afd15d129bc87c87cb",
+              "signer_id": "principal-sandbox-sample",
+              "tenant_id": "tenant-sandbox-sample",
+              "trust_status": "VALID"
+            }
+          ],
+          "schema_version": "intentrax.registry.projection/1.0",
+          "status": "READY"
+        },
+        "registry_entry_id": "5e418820af1cf7da2ef3fae2d62cda1d15c37727573db1afd15d129bc87c87cb",
+        "registry_trace": {
+          "integrity": {
+            "hash_algorithm": "SHA-256",
+            "input_hash": "b762799b854c29a05aad4b505356fcb63538a410c99fdef345da50d07e65c58f",
+            "output_hash": "89e5f7fb3612c17fb76fd9d62b400337d6b698bca65bc5a9aa5a166664f3a4ff",
+            "trace_hash": "2e0154692d5718e378725f23d82bbc89bd8883f9110a6c8ffb46850187c05746"
+          },
+          "report_hash": "b38d21fd4f0487cbef7842a4842daf1c1cf2597f11775687e10229e479000f4d",
+          "schema_version": "intentrax.registry.observability/1.0",
+          "status": "READY",
+          "trace_refs": [
+            {
+              "artifact_hash": "674a804529c9b5ea2bf4476226dc44b7653578fd5a7631c2365f77a6857ccf47",
+              "component": "admission"
+            },
+            {
+              "artifact_hash": "78497e725eaced70a5dbfa7b9f67c1d882351c5bdbb476c03ad0670585b4e459",
+              "component": "projection"
+            },
+            {
+              "artifact_hash": "e53bbc2416de405d1758a9a46e0287122eab3b02386e5d19c9d0f95396afa122",
+              "component": "replay"
+            },
+            {
+              "artifact_hash": "1ffcd7036d00aaef91832d046f54db3a7f9416b5ab86e5a7f9eaecae10e83666",
+              "component": "retrieval"
+            },
+            {
+              "artifact_hash": "a0c1dd17e3cdc3ee93f0ba2f586af99e42889ef20c475d5d8f29430cb4343086",
+              "component": "verification"
+            }
+          ]
+        },
+        "replay_result": {
+          "integrity": {
+            "hash_algorithm": "SHA-256",
+            "input_hash": "93836eab487d5ecd15c1bbaf46a311fff43b0e33a9e3d04dc07af63403a9ff6e",
+            "output_hash": "e53bbc2416de405d1758a9a46e0287122eab3b02386e5d19c9d0f95396afa122",
+            "trace_hash": "b59a1562a0aa383e798740b75728ad0ed3b0273846e7f8f9374c6f0aa2ad0ffa"
+          },
+          "original_aep_hash": "5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1",
+          "output_match": true,
+          "replay_aep_hash": "5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1",
+          "replay_consistent": true,
+          "replay_result_hash": "8dcc15a3f1a2ae58c5e05a18d82b1a355c6d29b958a1b9ae5daa3fb7443304a7",
+          "replay_status": "MATCH",
+          "schema_version": "intentrax.registry.replay/1.0"
+        },
+        "signature": {
+          "integrity": {
+            "hash_algorithm": "SHA-256",
+            "input_hash": "59ccbfb78f6e0962943e6a5d6e88d381671f781021ee5dfd0e177a81b962d212",
+            "output_hash": "775149e2b082c6de1688aa75b45b4bd30f1d69cd3b6e4a76b8a5f0162430775c",
+            "trace_hash": "c8fe25c39148b79f8c058ed72208b811276afda112ce9251995d1916b4632fe7"
+          },
+          "payload_hash": "42733f43cbfb9b666413f60877289bea6243b203ce3c1841c341229a9e738a78",
+          "required_signatures": 2,
+          "schema_version": "intentrax.trust.signature_bundle/1.0",
+          "signatures": [
+            {
+              "algorithm": "ED25519",
+              "key_binding_hash": "7801c2e78554af3c9235b4d73a90e19168d55da385cb5a14f2924c8f3dd727f5",
+              "key_id": "sandbox-sample-a",
+              "key_version": "1",
+              "payload_hash": "42733f43cbfb9b666413f60877289bea6243b203ce3c1841c341229a9e738a78",
+              "public_key_hash": "cf570bcd7b7a81aa5255274a88c30d90f5caf434f12c6eb240280c3e525fb158",
+              "signature_hex": "0f0e4d54d04ea51c93321eeb0ab4b3ae9f3451c42f4e337d1c4396f484c898ddb310163b79e616fb4072acb095235be7c5a37dfb5630f36c7bcb9757d65b8f04"
+            },
+            {
+              "algorithm": "ED25519",
+              "key_binding_hash": "85c827129d307805fff439381322ff9172dfd0fba71e51c3336515f33ebf6cf0",
+              "key_id": "sandbox-sample-b",
+              "key_version": "1",
+              "payload_hash": "42733f43cbfb9b666413f60877289bea6243b203ce3c1841c341229a9e738a78",
+              "public_key_hash": "6d8654e62d403ecc77ca1f0310c88c2b02cf7122a0b9954a24f89d9902baccc6",
+              "signature_hex": "52b06493a901af428aa3f9af500e350fa2c6282f112c1e689a32e18c2805629ee5557e3503c2fb216ab81fee680711a1d0e58533f1a0a49affaa685d8797df05"
+            }
+          ],
+          "total_signers": 2
+        },
+        "trust_status": "VALID",
+        "verification_result": {
+          "aep_integrity_valid": true,
+          "integrity": {
+            "hash_algorithm": "SHA-256",
+            "input_hash": "187cb9cd7978344c4ffd721795626a6e81c1b46c9a3b902ca2a1c37e61234b2f",
+            "output_hash": "a0c1dd17e3cdc3ee93f0ba2f586af99e42889ef20c475d5d8f29430cb4343086",
+            "trace_hash": "5f26fd948e1de1cdb9b1b66d559c51af26a729b75a1eeecfabc9716a550961c4"
+          },
+          "recomputed_aep_hash": "5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1",
+          "schema_version": "intentrax.registry.verification/1.0",
+          "signature_verification_valid": true,
+          "trust_status_reconfirmed": true,
+          "verification_hash": "b3a8cbf863f744a431c6d7076c15b395e89887eff9bb71f4f2db57bcb72fc715",
+          "verification_status": "VERIFIED"
+        }
+      },
+      "schema_version": "intentrax.registry.proof_verification_bundle/1.0"
+    },
+    "verification_hash": "a0c1dd17e3cdc3ee93f0ba2f586af99e42889ef20c475d5d8f29430cb4343086"
+  },
+  "query": {
+    "aep_hash": "5bd89279d128a9c42aaae3d731cd647e027435087d1bfd2342ccde37adb84bd1",
+    "tenant_id": "tenant-sandbox-sample"
+  },
+  "result_hash": "6e01c9197e6ef08af45221720bf06c623a52a746b2c871a165c7211a840ddc5c",
+  "schema_version": "intentrax.registry.proof_lookup/1.0",
+  "store_mode": "POSTGRESQL_APPEND_ONLY"
+}
