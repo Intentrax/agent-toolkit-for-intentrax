@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildAgentGatewayAdmissionEnvelope } from "../index.js";
 
-const VERSION = "1.1.0";
+const VERSION = "1.1.1";
 const ADMISSION_SCHEMA_VERSION = "intentrax.runtime.agent_admission_request/1.0";
 const INIT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_init/1.0";
 const ACTION_RECEIPT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_action_receipt/1.0";
@@ -24,7 +24,8 @@ const SIGNATURE_PAYLOAD_VERSION = "intentrax.trust.signature_payload/1.0";
 const SIGNATURE_PAYLOAD_FIELDS = Object.freeze(["payload_version", "canonical_aep_json", "aep_hash"]);
 const PUBLISHED_KEY_SET_SCHEMA_VERSION = "intentrax.trust.published_key_set/1.0";
 const BUILT_IN_KEY_SET_URLS = Object.freeze([
-  // Published production signer keys (trust-bearing), bundled once Intentrax publishes them.
+  // Published production signer keys (trust-bearing), exported from the production
+  // keyring with engine/cmd/sovereign-public-key-set.
   new URL("../trust/production-key-set.json", import.meta.url),
   // Published sandbox keys (not trust-bearing).
   new URL("../trust/sandbox-key-set.json", import.meta.url),
@@ -1393,8 +1394,8 @@ function validateSignerRoster(bundle, signatureBundle, quorum, payload) {
 }
 
 // A published key set pins who may sign: production keys (trust_bearing) or
-// sandbox keys (not trust-bearing). The SDK ships the sandbox set; production
-// keys are supplied with --trusted-keys from the set Intentrax publishes.
+// sandbox keys (not trust-bearing). The SDK ships both published sets; extra sets
+// (or revocations) can be supplied with --trusted-keys.
 function loadPublishedKeySets(trustedKeyPaths) {
   const sets = [];
   for (const url of BUILT_IN_KEY_SET_URLS) {

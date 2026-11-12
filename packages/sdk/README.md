@@ -140,8 +140,10 @@ pass the production key set Intentrax publishes with `--trusted-keys <file>`.
    (`canonical_payload_json`) and the signature quorum;
 3. checks that the signed payload carries the record's own AEP, so the AEP cannot
    be rewritten after signing even if every outer hash is recomputed;
-4. checks each signer against published key sets: the bundled sandbox set
-   (`trust/sandbox-key-set.json`, not trust-bearing) and any `--trusted-keys` files.
+4. checks each signer against published key sets: the bundled production set
+   (`trust/production-key-set.json`, trust-bearing), the bundled sandbox set
+   (`trust/sandbox-key-set.json`, not trust-bearing), and any `--trusted-keys` files.
+   A revocation in any loaded set wins.
 
 | Status | Exit | Meaning |
 |---|---|---|

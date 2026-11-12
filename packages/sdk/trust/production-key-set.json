@@ -1,0 +1,26 @@
+{
+  "issuer": "Intentrax",
+  "key_set_id": "intentrax-production-beta",
+  "keys": [
+    {
+      "algorithm": "ED25519",
+      "environment": "production",
+      "key_id": "runtime-sovereign-proof-key-a",
+      "key_version": "v1",
+      "public_key_material": "cca8a59628ffe97d9b27a1946385c3b44493be7145498f6019c65aeaef3ab82c",
+      "status": "ACTIVE",
+      "trust_bearing": true
+    },
+    {
+      "algorithm": "ED25519",
+      "environment": "production",
+      "key_id": "runtime-sovereign-proof-key-b",
+      "key_version": "v1",
+      "public_key_material": "b9c4170f3dbf862af8cff05e96b41ca377660f32c714de837b98bff02c3303b1",
+      "status": "ACTIVE",
+      "trust_bearing": true
+    }
+  ],
+  "published_at": "2026-11-12T13:55:49Z",
+  "schema_version": "intentrax.trust.published_key_set/1.0"
+}
