@@ -1,10 +1,10 @@
 {
   "$schema": "intentrax://schemas/verification/typescript-sdk/npm-release-lock",
   "release_id": "typescript-sdk-npm-release-001",
-  "release_version": "@intentrax/sdk/1.1.1",
+  "release_version": "@intentrax/sdk/1.2.0",
   "sdk_contract_version": "intentrax-public-sdk-contract/1.0",
   "package_name": "@intentrax/sdk",
-  "package_version": "1.1.1",
+  "package_version": "1.2.0",
   "canonicalization_version": "json-stable-indent/1.0",
   "hash_algorithm": "SHA-256",
   "generator_version": "intentrax-typescript-sdk-release-gen/1.0",
@@ -27,15 +27,15 @@
     "dry_run_only_reason": "source tree stores deterministic npm release evidence only; registry publish and signing must run as controlled release operations outside pull request CI"
   },
   "npm_pack": {
-    "id": "@intentrax/sdk@1.1.1",
+    "id": "@intentrax/sdk@1.2.0",
     "name": "@intentrax/sdk",
-    "version": "1.1.1",
-    "size": 70006,
-    "unpackedSize": 450474,
-    "shasum": "37d5175d6094ba7e100030766af16e17f740bacb",
-    "integrity": "sha512-et6uPyXeoMLeeUU8phMQFfE+0GUIplPsCzk2ZdOc12IAKq2YAmqr1UPAh9I1dD73igCRGaPkUPTpCQ87QjD/8g==",
-    "tarball_sha256": "26f9fdddcbfd4bd89a2d1f27a6a75a65f845c04723d143aaca0fe3343a06ee4d",
-    "filename": "intentrax-sdk-1.1.1.tgz",
+    "version": "1.2.0",
+    "size": 71343,
+    "unpackedSize": 455045,
+    "shasum": "32f74ed35bbddb6e792326edd2292db00bdbf378",
+    "integrity": "sha512-ffnk7zfZNLuTaWOO26IBzxs6Q95y7sVPwr+L8xIp6CzD9+JLEDDtPwq+jjMYaN1iV+TDvik7Z4k20ftUxchUBA==",
+    "tarball_sha256": "8331e583ab1939b8f2bfb1eb8ac1039f9e7f9520f934b01370e79f4ec2c467be",
+    "filename": "intentrax-sdk-1.2.0.tgz",
     "files": [
       {
         "path": "LICENSE",
@@ -44,12 +44,12 @@
       },
       {
         "path": "README.md",
-        "size": 9979,
+        "size": 10576,
         "mode": 420
       },
       {
         "path": "cli/intentrax.mjs",
-        "size": 130937,
+        "size": 134883,
         "mode": 420
       },
       {
@@ -159,7 +159,7 @@
       },
       {
         "path": "trust/production-key-set.json",
-        "size": 802,
+        "size": 830,
         "mode": 420
       },
       {
@@ -193,7 +193,7 @@
     {
       "path": "sdk/adoption/pb-a5-003-006-beta-acceptance.v1.json",
       "role": "adoption_acceptance_lock",
-      "sha256": "d9d82e742f7b2a1bb592f3218bffa4ad3e2f304cef997cfc79bde28092279180",
+      "sha256": "f47e678ea603bd6633eb7380c332a09a932e355f420221bdaa551d998e177753",
       "bytes": 14791
     },
     {
@@ -247,20 +247,20 @@
     {
       "path": "sdk/typescript/README.md",
       "role": "npm_package_documentation",
-      "sha256": "13fe707573e4e6da04db7badb6f195d383ce2e7bd2447a5306d02fe88cc4ab71",
-      "bytes": 9979
+      "sha256": "5fbbf736f725099ad61b7598b911e2b4c7e3da478ccff1acbab316caad679411",
+      "bytes": 10576
     },
     {
       "path": "sdk/typescript/cli/intentrax.mjs",
       "role": "npm_package_cli",
-      "sha256": "6fce19fdd7b6b28df4a641c2d8e4dbed30ee57017452808d7c8f6e80cf476de3",
-      "bytes": 130937
+      "sha256": "7673971a27d28bc2614057e3cf7d4193c107d7301c540d08e1654838a692e70a",
+      "bytes": 134883
     },
     {
       "path": "sdk/typescript/conformance.test.mjs",
       "role": "npm_package_conformance_tests",
-      "sha256": "61fdb644d73533d4f4e7e27a21bf3245ce7826c91db6397b2342dba88ebc39de",
-      "bytes": 99675
+      "sha256": "3565ce9c5bf048c2e3a9cb390103afd20b1f617f130dcf93a111403184d9b003",
+      "bytes": 103912
     },
     {
       "path": "sdk/typescript/examples/adapters/claude-code.md",
@@ -355,13 +355,13 @@
     {
       "path": "sdk/typescript/package-lock.json",
       "role": "npm_install_lock",
-      "sha256": "fd0e593f344aaeca4fe02356cfcdf8720e9a703437119ae51a2c2038d986376f",
+      "sha256": "caf2d63e870b9cd7d2ce451568f2e6dcbc2a6552563a7c00380324104a4b477b",
       "bytes": 338
     },
     {
       "path": "sdk/typescript/package.json",
       "role": "npm_package_manifest",
-      "sha256": "6e53471378dffc5f07cc9810e711f88069fa44a98e39e18019d0422a5f75da20",
+      "sha256": "70bd87f65057ecfb38849f0e204d9ce7e74963994485fff56c4284deeafa5490",
       "bytes": 1322
     },
     {
@@ -371,5 +371,5 @@
       "bytes": 10208
     }
   ],
-  "release_hash": "0016baa09829a89083fc046e04a2f04c2d132ebc123a265722c0b2365424921e"
+  "release_hash": "8b5abecb314919c13ecd6d66cc1356ff1934c584dd9c54f1263d54c9d01af754"
 }

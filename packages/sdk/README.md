@@ -130,8 +130,9 @@ npx @intentrax/sdk verify-proof node_modules/@intentrax/sdk/examples/sandbox/tam
 ```
 
 To verify your own artifact, point the command at any proof lookup JSON export
-downloaded from your tenant's `/v1/proofs/{proof_id}/export?format=json`, and
-pass the production key set Intentrax publishes with `--trusted-keys <file>`.
+downloaded from your tenant's `/v1/proofs/{proof_id}/export?format=json`. The
+production key set is bundled, so you don't need any flags. Pass extra key sets
+(for example, ones that revoke a key) with `--trusted-keys <file>`.
 
 `verify-proof` reads a registry-backed proof lookup JSON export and, offline:
 
@@ -143,13 +144,19 @@ pass the production key set Intentrax publishes with `--trusted-keys <file>`.
 4. checks each signer against published key sets: the bundled production set
    (`trust/production-key-set.json`, trust-bearing), the bundled sandbox set
    (`trust/sandbox-key-set.json`, not trust-bearing), and any `--trusted-keys` files.
-   A revocation in any loaded set wins.
+   A revocation in any loaded set wins;
+5. checks that at least the key set's `min_trusted_signers` distinct trusted keys
+   signed. The production set requires 2. A proof's own quorum isn't enough,
+   because a signature can be stripped along with the quorum and roster entries
+   that describe it. When several sets vouch for the signers, the strictest
+   minimum applies.
 
 | Status | Exit | Meaning |
 |---|---|---|
-| `PASS` | 0 | Every signer is a published, trust-bearing key |
+| `PASS` | 0 | Every signer is a published, trust-bearing key, and enough distinct keys signed |
 | `SANDBOX_NON_TRUST_BEARING` | 0 | Every signer is a published sandbox key: the mechanics check out, but this is not production assurance |
 | `UNPINNED_SIGNER` | 3 | Signatures are valid, but a signer is not in any trusted key set, so who signed is unproven |
+| `INSUFFICIENT_TRUSTED_SIGNERS` | 3 | Every signer is trusted, but fewer distinct keys signed than the key set requires (signatures may have been stripped) |
 | `REVOKED_SIGNER`, `MIXED_TRUST` | 3 | Not a trusted result |
 | (none) | 2 | An integrity, signature, or binding check failed (failed closed) |
 

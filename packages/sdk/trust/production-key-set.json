@@ -21,6 +21,7 @@
       "trust_bearing": true
     }
   ],
+  "min_trusted_signers": 2,
   "published_at": "2026-11-12T13:55:49Z",
-  "schema_version": "intentrax.trust.published_key_set/1.0"
+  "schema_version": "intentrax.trust.published_key_set/1.1"
 }

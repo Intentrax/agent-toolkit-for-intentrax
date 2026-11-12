@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildAgentGatewayAdmissionEnvelope } from "../index.js";
 
-const VERSION = "1.1.1";
+const VERSION = "1.2.0";
 const ADMISSION_SCHEMA_VERSION = "intentrax.runtime.agent_admission_request/1.0";
 const INIT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_init/1.0";
 const ACTION_RECEIPT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_action_receipt/1.0";
@@ -22,7 +22,11 @@ const AEP_HASH_DOMAIN = "INTENTRAX_PROOF_CANONICAL_AEP_V1";
 const SIGNATURE_PAYLOAD_HASH_DOMAIN = "INTENTRAX_TRUST_SIGNATURE_PAYLOAD_V1";
 const SIGNATURE_PAYLOAD_VERSION = "intentrax.trust.signature_payload/1.0";
 const SIGNATURE_PAYLOAD_FIELDS = Object.freeze(["payload_version", "canonical_aep_json", "aep_hash"]);
-const PUBLISHED_KEY_SET_SCHEMA_VERSION = "intentrax.trust.published_key_set/1.0";
+// 1.1 adds a required min_trusted_signers: how many distinct trust-bearing keys
+// (by key_id) must have signed a proof for it to PASS. 1.0 is still accepted,
+// but only for sets with no trust-bearing keys (sandbox sets).
+const PUBLISHED_KEY_SET_SCHEMA_VERSION = "intentrax.trust.published_key_set/1.1";
+const PUBLISHED_KEY_SET_SCHEMA_VERSION_V1 = "intentrax.trust.published_key_set/1.0";
 const BUILT_IN_KEY_SET_URLS = Object.freeze([
   // Published production signer keys (trust-bearing), exported from the production
   // keyring with engine/cmd/sovereign-public-key-set.
@@ -1195,9 +1199,10 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
   const withoutHash = {
     schema_version: LOCAL_PROOF_VERIFICATION_SCHEMA_VERSION,
     verifier_version: LOCAL_PROOF_VERIFIER_VERSION,
-    // PASS only when every signer is a published, trust-bearing key. Valid
-    // signatures from keys you have not chosen to trust prove nothing about who
-    // signed, so they never yield PASS.
+    // PASS only when every signer is a published, trust-bearing key and at least
+    // min_trusted_signers distinct trusted keys signed. Valid signatures from
+    // keys you have not chosen to trust prove nothing about who signed, so they
+    // never yield PASS.
     status: trust.signer_trust === "TRUSTED" ? "PASS" : trust.signer_trust,
     signer_trust: trust.signer_trust,
     trust_bearing: trust.signer_trust === "TRUSTED",
@@ -1206,6 +1211,10 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
       signed_bytes: "verification_bundle.payload.canonical_payload_json",
       required_signatures: signatures.required,
       valid_signatures: signatures.signers.length,
+      // The published policy from the key sets, not the proof's own quorum: a
+      // proof's roster and quorum metadata can be reduced together.
+      min_trusted_signers: trust.min_trusted_signers,
+      distinct_trusted_signers: trust.distinct_trusted_signers,
       signers: trust.signers,
     },
     key_sets: keySets.map((set) => ({ key_set_id: set.key_set_id, environment: set.environment, source: set.source })),
@@ -1231,7 +1240,8 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
       ed25519_signatures_verified: true,
       signature_quorum_satisfied: true,
       signed_payload_binds_record_aep: true,
-      signers_pinned_to_published_keys: trust.signer_trust === "TRUSTED" || trust.signer_trust === "SANDBOX_NON_TRUST_BEARING",
+      signers_pinned_to_published_keys: trust.signer_trust === "TRUSTED" || trust.signer_trust === "SANDBOX_NON_TRUST_BEARING" || trust.signer_trust === "INSUFFICIENT_TRUSTED_SIGNERS",
+      min_trusted_signers_met: trust.signer_trust === "TRUSTED",
       canonical_json_authoritative: true,
       pdf_receipt_non_authoritative: true,
     },
@@ -1415,9 +1425,20 @@ function parsePublishedKeySet(source, origin) {
   }
   const set = parseSingleJSON(source, "trusted key set");
   const invalid = [];
-  if (!isRecord(set) || set.schema_version !== PUBLISHED_KEY_SET_SCHEMA_VERSION) invalid.push("schema_version");
+  if (!isRecord(set) || ![PUBLISHED_KEY_SET_SCHEMA_VERSION, PUBLISHED_KEY_SET_SCHEMA_VERSION_V1].includes(set.schema_version)) invalid.push("schema_version");
   if (isRecord(set) && !stableNonEmpty(set.key_set_id)) invalid.push("key_set_id");
   if (!isRecord(set) || !Array.isArray(set.keys) || set.keys.length === 0) invalid.push("keys");
+  if (isRecord(set) && Array.isArray(set.keys)) {
+    const keyIds = new Set(set.keys.filter(isRecord).map((key) => key.key_id));
+    if (set.schema_version === PUBLISHED_KEY_SET_SCHEMA_VERSION) {
+      // The policy must be satisfiable by this set's own keys.
+      if (!Number.isInteger(set.min_trusted_signers) || set.min_trusted_signers < 1 || set.min_trusted_signers > keyIds.size) invalid.push("min_trusted_signers");
+    } else if (set.schema_version === PUBLISHED_KEY_SET_SCHEMA_VERSION_V1) {
+      if (Object.hasOwn(set, "min_trusted_signers")) invalid.push("min_trusted_signers");
+      // A 1.0 set cannot state a minimum trusted-signer count, so it may not anchor trust.
+      if (set.keys.some((key) => isRecord(key) && key.trust_bearing === true)) invalid.push("schema_version");
+    }
+  }
   if (isRecord(set) && Array.isArray(set.keys)) {
     for (const [index, key] of set.keys.entries()) {
       if (!isRecord(key)
@@ -1432,13 +1453,17 @@ function parsePublishedKeySet(source, origin) {
     }
   }
   if (invalid.length > 0) {
-    fail(`trusted key set is invalid (${origin}): ${sortedUnique(invalid).join(",")}`);
+    const hint = invalid.includes("schema_version") || invalid.includes("min_trusted_signers")
+      ? ` (trust-bearing keys need ${PUBLISHED_KEY_SET_SCHEMA_VERSION} with an integer min_trusted_signers between 1 and the number of distinct key_ids)`
+      : "";
+    fail(`trusted key set is invalid (${origin}): ${sortedUnique(invalid).join(",")}${hint}`);
   }
   const environments = [...new Set(set.keys.map((key) => key.environment).filter(stableNonEmpty))];
   return {
     key_set_id: set.key_set_id,
     environment: environments.length === 1 ? environments[0] : "mixed",
     source: origin,
+    min_trusted_signers: set.schema_version === PUBLISHED_KEY_SET_SCHEMA_VERSION ? set.min_trusted_signers : 1,
     keys: set.keys,
   };
 }
@@ -1461,13 +1486,26 @@ function classifySignerTrust(signers, keySets) {
       ?? null;
     return { key_id: signer.key_id, key_version: signer.key_version, public_key_hash: signer.public_key_hash, anchor };
   });
+  // The strictest policy wins: every key set that vouches for any signer as
+  // trust-bearing contributes its min_trusted_signers, and the maximum applies.
+  // Supplying an extra, laxer set cannot lower the bundled production policy.
+  let minTrustedSigners = 1;
+  for (const set of keySets) {
+    const vouches = set.keys.some((key) => key.trust_bearing === true && key.status !== "REVOKED"
+      && signers.some((signer) => key.key_id === signer.key_id && key.key_version === signer.key_version && key.public_key_material === signer.public_key_material));
+    if (vouches) minTrustedSigners = Math.max(minTrustedSigners, set.min_trusted_signers);
+  }
+  // Versions of one key are one signer.
+  const distinctTrustedSigners = new Set(resolved.filter((signer) => signer.anchor?.trust_bearing === true && signer.anchor.status !== "REVOKED").map((signer) => signer.key_id)).size;
   let signerTrust;
   if (resolved.some((signer) => signer.anchor?.status === "REVOKED")) signerTrust = "REVOKED_SIGNER";
   else if (resolved.length === 0 || resolved.some((signer) => signer.anchor === null)) signerTrust = "UNPINNED_SIGNER";
-  else if (resolved.every((signer) => signer.anchor.trust_bearing === true)) signerTrust = "TRUSTED";
+  else if (resolved.every((signer) => signer.anchor.trust_bearing === true)) {
+    signerTrust = distinctTrustedSigners >= minTrustedSigners ? "TRUSTED" : "INSUFFICIENT_TRUSTED_SIGNERS";
+  }
   else if (resolved.every((signer) => signer.anchor.trust_bearing === false)) signerTrust = "SANDBOX_NON_TRUST_BEARING";
   else signerTrust = "MIXED_TRUST";
-  return { signer_trust: signerTrust, signers: resolved };
+  return { signer_trust: signerTrust, signers: resolved, min_trusted_signers: minTrustedSigners, distinct_trusted_signers: distinctTrustedSigners };
 }
 
 function signerTrustMessage(report) {
@@ -1476,6 +1514,10 @@ function signerTrustMessage(report) {
   }
   if (report.signer_trust === "REVOKED_SIGNER") {
     return "intentrax: a signing key is REVOKED in the trusted key set; this proof must not be relied on.";
+  }
+  if (report.signer_trust === "INSUFFICIENT_TRUSTED_SIGNERS") {
+    const verification = report.signature_verification;
+    return `intentrax: every signer is a published trust-bearing key, but only ${verification.distinct_trusted_signers} distinct key(s) signed and the published key set requires ${verification.min_trusted_signers}. Signatures may have been stripped from this proof; it must not be relied on.`;
   }
   if (report.signer_trust === "MIXED_TRUST") {
     return "intentrax: the proof mixes trust-bearing and sandbox signers; it is not a production-trusted proof.";
@@ -2687,17 +2729,24 @@ Proof export verification:
   not required. The JSON export is authoritative; PDF receipts are companions.
 
   Result (status / exit code):
-    PASS                       0  every signer is a published, trust-bearing key
+    PASS                       0  every signer is a published, trust-bearing key,
+                                  and at least the key set's min_trusted_signers
+                                  distinct keys signed
     SANDBOX_NON_TRUST_BEARING  0  every signer is a published sandbox key: the
                                   mechanics check out, but it is not production
                                   assurance
     UNPINNED_SIGNER            3  signatures are valid but a signer is not in
                                   any trusted key set (who signed is unproven)
+    INSUFFICIENT_TRUSTED_SIGNERS 3  every signer is trusted, but fewer distinct
+                                  keys signed than the published key set
+                                  requires (signatures may have been stripped)
     REVOKED_SIGNER / MIXED_TRUST 3
     any integrity or signature failure exits 2 (failed closed)
 
-  The SDK ships the sandbox key set (trust/sandbox-key-set.json). Supply
-  production keys with --trusted-keys <file> (repeatable).
+  The SDK ships the production key set (trust/production-key-set.json,
+  min_trusted_signers 2) and the sandbox key set (trust/sandbox-key-set.json).
+  Add more sets, for example revocations, with --trusted-keys <file>
+  (repeatable).
 
 PDF receipt verification:
   verify-pdf-receipt reads downloaded PDF receipt bytes, checks the PDF header,
