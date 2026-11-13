@@ -223,3 +223,40 @@ validity, or regenerate a proof — `verified` is exactly the backend's
 `"pass"`), never a raw signature; a value that looks like raw signing material
 is refused so it can never leak. An absent or malformed envelope yields a safe,
 non-verified reading rather than throwing.
+
+Binding the rendered output to a proof (execute request `/1.1`):
+
+```js
+import { bindIntentExecuteOutput, verificationPointerMetaTag } from "@intentrax/sdk";
+import { executeIntentHttp } from "@intentrax/sdk/http";
+
+// Bind exactly the text the page will show inside its data-intentrax-output
+// region(s). The request becomes schema /1.1 with an output_binding block.
+const request = bindIntentExecuteOutput({
+  intent_id: "intent-refund-8812",
+  tenant_id: process.env.INTENTRAX_TENANT_ID,
+  action: "APPROVE_REFUND",
+  idempotency_key: "refund-8812-v1",
+  proof_chain_fixture_ref: "intent-execute",
+  schema_version: "intentrax.runtime.intent_execute.request/1.0",
+}, renderedOutput);
+
+const result = await executeIntentHttp(request, transport, {
+  base_url: process.env.INTENTRAX_BASE_URL,
+  api_key: process.env.INTENTRAX_API_KEY,
+});
+```
+
+The engine seals the binding inside the signed proof (`aep.output_binding`,
+`binding_source: PRODUCER_DECLARED_AT_ISSUANCE`), and the public verifier
+relays it only from that signed proof. The browser extension recomputes the
+`intentrax-content/1.0` hash over the page's visible marked output and shows the
+green Verification Mark only when the proof is valid and the hashes match. A
+copy of the proof id on different content stays neutral.
+
+`validateIntentExecuteRequest` mirrors the engine: `output_binding` is accepted
+only under `/1.1` (a `/1.0` body carrying it is refused as `body`), is decoded
+strictly (exactly `content_hash`, `hash_algorithm`, `normalization`), and its
+`content_hash` must be 64 lowercase hex, optionally `sha256:`-prefixed. `/1.0`
+requests are unchanged. The execute lane is fail-closed per tenant (HTTP 423
+until live execution is enabled, HTTP 403 until the tenant is allowlisted).

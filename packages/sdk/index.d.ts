@@ -6,6 +6,7 @@ export declare const AGENT_GATEWAY_ADMISSION_REQUEST_HASH_DOMAIN: "INTENTRAX_AGE
 export declare const AGENT_ADMISSION_SCHEMA_VERSION: "intentrax.runtime.agent_admission_request/1.0";
 export declare const AGENT_ADMISSION_ENDPOINT: "/v1/agent/admissions";
 export declare const INTENT_EXECUTE_REQUEST_SCHEMA_VERSION: "intentrax.runtime.intent_execute.request/1.0";
+export declare const INTENT_EXECUTE_REQUEST_SCHEMA_VERSION_V11: "intentrax.runtime.intent_execute.request/1.1";
 export declare const INTENT_EXECUTE_ENDPOINT: "/v1/intents/execute";
 export declare const INTENT_EXECUTE_MAX_REQUEST_BYTES: 4096;
 export declare const RECEIPT_VERIFICATION_REQUEST_SCHEMA_VERSION: "intentrax.runtime.proof_verification.request/1.0";
@@ -45,14 +46,28 @@ export type AgentGatewayAdmissionRequest = {
   idempotency_key_hash: string;
 };
 
-export type IntentExecuteRequest = {
-  schema_version: "intentrax.runtime.intent_execute.request/1.0";
+type IntentExecuteRequestFields = {
   intent_id: string;
   tenant_id: string;
   action: string;
   idempotency_key: string;
   proof_chain_fixture_ref: string;
 };
+export type IntentExecuteRequestV10 = IntentExecuteRequestFields & {
+  schema_version: "intentrax.runtime.intent_execute.request/1.0";
+};
+// /1.1: the /1.0 fields plus an optional producer-declared output_binding that
+// the engine seals into the signed proof. content_hash may be the bare 64
+// lowercase hex buildOutputBinding emits or the same with a "sha256:" prefix.
+export type IntentExecuteRequestV11 = IntentExecuteRequestFields & {
+  schema_version: "intentrax.runtime.intent_execute.request/1.1";
+  output_binding?: {
+    content_hash: string;
+    hash_algorithm: "SHA-256";
+    normalization: "intentrax-content/1.0";
+  };
+};
+export type IntentExecuteRequest = IntentExecuteRequestV10 | IntentExecuteRequestV11;
 
 export type ReceiptVerificationRequest = {
   schema_version: "intentrax.runtime.proof_verification.request/1.0";
@@ -208,6 +223,10 @@ export declare function buildVerifierHandoffEnvelope(request: VerifierHandoffReq
   error: SDKError;
 };
 export declare function validateIntentExecuteRequest(request: unknown): string[];
+export declare function bindIntentExecuteOutput(
+  request: IntentExecuteRequestFields & { schema_version?: string },
+  renderedOutput: string | readonly string[],
+): IntentExecuteRequestV11 & { output_binding: OutputBinding };
 export declare function buildIntentExecuteEnvelope(request: IntentExecuteRequest): {
   status: "PASS";
   output: {

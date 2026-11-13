@@ -12,6 +12,12 @@ export const AGENT_ADMISSION_ENDPOINT = "/v1/agent/admissions";
 // (HTTP 423 until LiveExecutionEnabled, HTTP 403 until the tenant is
 // allowlisted). See engine/internal/runtime/intentexecute/intentexecute.go.
 export const INTENT_EXECUTE_REQUEST_SCHEMA_VERSION = "intentrax.runtime.intent_execute.request/1.0";
+// /1.1 adds exactly one OPTIONAL field to /1.0: output_binding, the
+// producer-declared `intentrax-content/1.0` hash of the rendered output. The
+// engine seals it into the signed proof (aep.output_binding,
+// binding_source PRODUCER_DECLARED_AT_ISSUANCE); see
+// engine/internal/runtime/intentexecute/output_binding.go.
+export const INTENT_EXECUTE_REQUEST_SCHEMA_VERSION_V11 = "intentrax.runtime.intent_execute.request/1.1";
 export const INTENT_EXECUTE_ENDPOINT = "/v1/intents/execute";
 // Mirrors intentexecute.MaxRequestBytes: the engine rejects a canonical body
 // larger than this with HTTP 400.
@@ -64,6 +70,10 @@ const INTENT_EXECUTE_REQUIRED_FIELDS = [
   "idempotency_key",
   "proof_chain_fixture_ref",
 ];
+
+// The engine decodes a /1.1 output_binding with DisallowUnknownFields into
+// exactly these three string fields (intentexecute.OutputBinding).
+const INTENT_EXECUTE_OUTPUT_BINDING_FIELDS = ["content_hash", "hash_algorithm", "normalization"];
 
 const RECEIPT_VERIFICATION_REQUIRED_FIELDS = [
   "schema_version",
@@ -562,24 +572,30 @@ export function buildAgentGatewayAdmissionEnvelope(request) {
 }
 
 // validateIntentExecuteRequest mirrors the engine's intentexecute.validateRequest
-// (and its DecodeRequest strictness): exactly the six fields, an UPPER_SNAKE
-// action, and a canonical body no larger than the engine's limit. It computes
-// NO proof/hash truth — receipt_id, request_hash, registry_proof_id, and
-// response_hash are the engine's to produce.
+// (and its DecodeRequest strictness): exactly the six fields (plus an optional
+// output_binding under /1.1 only), an UPPER_SNAKE action, and a canonical body
+// no larger than the engine's limit. It computes NO proof/hash truth —
+// receipt_id, request_hash, registry_proof_id, and response_hash are the
+// engine's to produce.
 export function validateIntentExecuteRequest(request) {
   if (request === null || typeof request !== "object" || Array.isArray(request)) {
     return ["intent_execute_request"];
   }
   const invalid = [];
+  const isV11 = request.schema_version === INTENT_EXECUTE_REQUEST_SCHEMA_VERSION_V11;
   // Unknown fields are a 400 at the engine (DisallowUnknownFields); reject them
-  // here too so the SDK never emits a body the engine would refuse.
+  // here too so the SDK never emits a body the engine would refuse. A /1.0 body
+  // carrying output_binding is such an unknown field.
   for (const key of Object.keys(request)) {
-    if (!INTENT_EXECUTE_REQUIRED_FIELDS.includes(key)) {
+    if (!INTENT_EXECUTE_REQUIRED_FIELDS.includes(key) && !(isV11 && key === "output_binding")) {
       invalid.push("body");
     }
   }
-  if (request.schema_version !== INTENT_EXECUTE_REQUEST_SCHEMA_VERSION) {
+  if (request.schema_version !== INTENT_EXECUTE_REQUEST_SCHEMA_VERSION && !isV11) {
     invalid.push("schema_version");
+  }
+  if (isV11 && Object.prototype.hasOwnProperty.call(request, "output_binding")) {
+    invalid.push(...validateIntentExecuteOutputBinding(request.output_binding));
   }
   if (!isNonEmptyStable(request.intent_id)) {
     invalid.push("intent_id");
@@ -598,13 +614,68 @@ export function validateIntentExecuteRequest(request) {
   if (!isNonEmptyStable(request.proof_chain_fixture_ref)) {
     invalid.push("proof_chain_fixture_ref");
   }
-  if (invalid.every((field) => field !== "body")) {
+  // Size-check only an otherwise-valid body: an invalid field (e.g. an explicit
+  // `undefined`) may not be canonicalizable, and must surface as a structured
+  // FAIL naming that field rather than a canonical_json throw.
+  if (invalid.length === 0) {
     const canonicalBytes = Buffer.byteLength(canonicalJson(request), "utf8");
     if (canonicalBytes > INTENT_EXECUTE_MAX_REQUEST_BYTES) {
       invalid.push("body");
     }
   }
   return [...new Set(invalid)].sort();
+}
+
+// validateIntentExecuteOutputBinding mirrors the engine's decodeOutputBinding +
+// validateOutputBinding: a non-null object of exactly the three string fields
+// (anything else is a decode error, reported as "output_binding"), then a
+// sealable content_hash, the SHA-256 algorithm and the intentrax-content/1.0
+// normalization.
+function validateIntentExecuteOutputBinding(binding) {
+  if (binding === null || typeof binding !== "object" || Array.isArray(binding)) {
+    return ["output_binding"];
+  }
+  for (const key of Object.keys(binding)) {
+    if (!INTENT_EXECUTE_OUTPUT_BINDING_FIELDS.includes(key) || typeof binding[key] !== "string") {
+      return ["output_binding"];
+    }
+  }
+  const invalid = [];
+  if (!isSealableOutputContentHash(binding.content_hash)) {
+    invalid.push("output_binding.content_hash");
+  }
+  if (binding.hash_algorithm !== CANONICAL_OUTPUT_HASH_ALGORITHM) {
+    invalid.push("output_binding.hash_algorithm");
+  }
+  if (binding.normalization !== CANONICAL_OUTPUT_NORMALIZATION) {
+    invalid.push("output_binding.normalization");
+  }
+  return invalid;
+}
+
+// isSealableOutputContentHash mirrors the engine's sealedContentHash: the bare
+// 64 lowercase hex the SDK emits, or the same with a "sha256:" prefix. Uppercase,
+// other prefixes, other lengths, and a degenerate digest (one repeated digit)
+// are refused.
+function isSealableOutputContentHash(value) {
+  if (typeof value !== "string") return false;
+  const digest = value.startsWith("sha256:") ? value.slice("sha256:".length) : value;
+  if (!SHA256_RE.test(digest)) return false;
+  return digest.split("").some((char) => char !== digest[0]);
+}
+
+// bindIntentExecuteOutput returns a NEW /1.1 execute request: the caller's
+// request with schema_version /1.1 and output_binding = buildOutputBinding of
+// the output the producer is about to render. The input is not mutated. Pass
+// the result to buildIntentExecuteEnvelope / executeIntentHttp, which validate
+// it. Bind exactly what the page will show inside its data-intentrax-output
+// region(s): the browser extension recomputes this hash over that visible text.
+export function bindIntentExecuteOutput(request, renderedOutput) {
+  return {
+    ...request,
+    schema_version: INTENT_EXECUTE_REQUEST_SCHEMA_VERSION_V11,
+    output_binding: buildOutputBinding(renderedOutput),
+  };
 }
 
 // buildIntentExecuteEnvelope is a THIN envelope builder: it validates and
