@@ -30,11 +30,11 @@
     "id": "@intentrax/sdk@1.4.0",
     "name": "@intentrax/sdk",
     "version": "1.4.0",
-    "size": 75867,
-    "unpackedSize": 470694,
-    "shasum": "7a29ef80f43896de227147ee5a9ad1f0385de50b",
-    "integrity": "sha512-bgTtP7lfpwHkSCIZ/7lWSu6oU1+ynKBCqf1/1ghzbj8WAF/S6etuM+7R+YIFPNMww/zR4DDrnr9GkkXI5Gz0TA==",
-    "tarball_sha256": "f5ecc0a2b8b6ee87ca3019696ffb3dcce421ea8ec1e0b7780661c8963dfae8e7",
+    "size": 83619,
+    "unpackedSize": 495056,
+    "shasum": "6cc160019e4e2d487c8a133625abe75a9d319f91",
+    "integrity": "sha512-TVJ3Ukc/cfiR2xM3YQhNRP1HO9kz/SsngGKPLkduvpT3OnvPLclGzQ59Y9dFspzO121Yll6PBFIQKb1ZqQWF+Q==",
+    "tarball_sha256": "e66cc1530b33595ba1dc312db02f5ba4c8cdc93f52a5ba9dae5cc5d4b16ce8fe",
     "filename": "intentrax-sdk-1.4.0.tgz",
     "files": [
       {
@@ -44,12 +44,12 @@
       },
       {
         "path": "README.md",
-        "size": 13324,
+        "size": 14817,
         "mode": 420
       },
       {
         "path": "cli/intentrax.mjs",
-        "size": 135538,
+        "size": 137863,
         "mode": 420
       },
       {
@@ -139,17 +139,17 @@
       },
       {
         "path": "index.d.ts",
-        "size": 13571,
+        "size": 16909,
         "mode": 420
       },
       {
         "path": "index.js",
-        "size": 39656,
+        "size": 48259,
         "mode": 420
       },
       {
         "path": "index.ts",
-        "size": 39656,
+        "size": 48259,
         "mode": 420
       },
       {
@@ -193,7 +193,7 @@
     {
       "path": "sdk/adoption/pb-a5-003-006-beta-acceptance.v1.json",
       "role": "adoption_acceptance_lock",
-      "sha256": "c6451d80842cd76a8d67f14c1982fa1d465d8d0bd61d481109da8043d3380468",
+      "sha256": "341bcf2624cc00cbfba6fdfaadde796ab972322c7e99916b2fb6458b84b967a2",
       "bytes": 14791
     },
     {
@@ -247,20 +247,20 @@
     {
       "path": "sdk/typescript/README.md",
       "role": "npm_package_documentation",
-      "sha256": "d5fc45b97f364b1104a42d5aff8779c8b07b2f91dabf4fb2893d23d72c092ad9",
-      "bytes": 13324
+      "sha256": "7ba46ac778e18b86a64f713815c5a336f7b4899d0f8efb0dbe4030737ca22c01",
+      "bytes": 14817
     },
     {
       "path": "sdk/typescript/cli/intentrax.mjs",
       "role": "npm_package_cli",
-      "sha256": "e2ae8f5bcc2b7973bae488c1c730ba75e42ad1fa68649eb05148e1f4f990d015",
-      "bytes": 135538
+      "sha256": "bbc0e16f7783db92c806836b667ff3038dcdc3c94c64319a12fd3dc6166097be",
+      "bytes": 137863
     },
     {
       "path": "sdk/typescript/conformance.test.mjs",
       "role": "npm_package_conformance_tests",
-      "sha256": "d5b3061158c811001f68f51968cbdebd1c351bbe28206aab94c31eeba43b2780",
-      "bytes": 110413
+      "sha256": "10adc9cf9d53426759ca1127487ec26d785024969868a522af41ed759848d8ea",
+      "bytes": 110757
     },
     {
       "path": "sdk/typescript/examples/adapters/claude-code.md",
@@ -331,20 +331,20 @@
     {
       "path": "sdk/typescript/index.d.ts",
       "role": "npm_package_types",
-      "sha256": "ae87b5d3cb0bc63f7daa934caceac2393906c35ab91aeddc5a49ea479717274c",
-      "bytes": 13571
+      "sha256": "80d825615007a146d398be5576ea2020e3d4af0b3a13e090e5744d8dd95320f3",
+      "bytes": 16909
     },
     {
       "path": "sdk/typescript/index.js",
       "role": "npm_package_runtime",
-      "sha256": "2716d2c5c6b145e7ec07a9026787c6b9513ba2a022bd9caa1ef48b32f6de1b93",
-      "bytes": 39656
+      "sha256": "a1b1f81c29f03f6c0a6d5397236adc7a4dee8cdbfe5e5378f27580351ba5c906",
+      "bytes": 48259
     },
     {
       "path": "sdk/typescript/index.ts",
       "role": "npm_package_source",
-      "sha256": "2716d2c5c6b145e7ec07a9026787c6b9513ba2a022bd9caa1ef48b32f6de1b93",
-      "bytes": 39656
+      "sha256": "a1b1f81c29f03f6c0a6d5397236adc7a4dee8cdbfe5e5378f27580351ba5c906",
+      "bytes": 48259
     },
     {
       "path": "sdk/typescript/live-runtime.test.mjs",
@@ -371,5 +371,5 @@
       "bytes": 10208
     }
   ],
-  "release_hash": "35edc9496ba1a82b7e55eda24c6258a06d2241d656c4ffeb475bf07a5f11c4d7"
+  "release_hash": "12763613e7d31b35fe1826d99990f44c3f08ef05616d67d8c41cf3a0178ebd7b"
 }

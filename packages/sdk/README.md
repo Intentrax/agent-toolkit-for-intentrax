@@ -165,6 +165,32 @@ signed, and bound to its own AEP. It does not show that the described action was
 carried out or had its intended effect. The verifier also rejects private key
 material markers. It does not require the runtime server, network access, or
 private keys.
+
+Since 1.4.0 the report also carries `verification_assessment`, printed as a
+table. It states what the proof establishes and what it does not:
+
+- `assurance_profile`: every proof issued today is `LEGACY_DECISION_RECORD`,
+  which requires only `RECORD_INTEGRITY`.
+- `assessments[]`: one row per dimension (`RECORD_INTEGRITY`,
+  `SIGNER_AUTHENTICITY`, `AUTHORIZATION`, `EXECUTION_REPORTED`,
+  `EXECUTION_ATTESTED`, `EFFECT_OBSERVED`, `EFFECT_CONFIRMED`, `CAUSAL_CHAIN`)
+  with `result`, `provenance`, `reasons` and `limitations`. `SIGNER_AUTHENTICITY`
+  is `VERIFIED` only when the status is `PASS`; every dimension after it is
+  `NOT_ASSESSED` for a legacy proof.
+- `verdict`: derived from the rows by a fixed rule, never asserted by a signer.
+  `VERIFIED_FOR_SCOPE` (record intact, trusted signers; the scope is the
+  required dimensions only), `INTEGRITY_ONLY` (signer not established) or
+  `VERIFICATION_FAILED` (for example a revoked signer).
+- `limitations[]`: machine-readable codes with text. A legacy proof always lists
+  `EXECUTION_NOT_ATTESTED`, `EFFECT_NOT_VERIFIED`, `POLICY_BINDING_SYNTHETIC` and
+  `COMPLETENESS_NOT_ESTABLISHED`, plus `SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS`
+  when the signer is not established.
+
+The block is additive: `status`, `signer_trust` and the exit code are unchanged.
+The model is exported (`deriveAssuranceVerdict`, `buildLegacyVerificationAssessment`,
+`ASSURANCE_PROFILES`, ...) and matches the Go offline verifier's
+`verification_assessment`.
+
 The JSON proof export remains authoritative. Downloaded PDF receipts are
 human-readable companions and should be checked against their exported hash
 metadata, not treated as replacement proof material.

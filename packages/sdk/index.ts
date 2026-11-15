@@ -1029,3 +1029,172 @@ export function verificationPointerMetaTag({ proof_id: proofId, verify_url: veri
   if (href.includes(";")) return null;
   return `<meta name="${VERIFICATION_POINTER_META_NAME}" content="${escapeVerificationPointerAttribute(`proof_id=${proofId};verify_url=${href}`)}">`;
 }
+
+// Evidence-quality model (INTENTRAX_ASSURANCE_GAP_ANALYSIS.md §5,
+// implementation plan P0-6 / P1-D).
+//
+// A verification result is a set of per-dimension assessments. The overall
+// verdict is COMPUTED from them by the fixed rule in deriveAssuranceVerdict();
+// no signer asserts it. The rule, dimensions, results, profiles and verdict
+// precedence are ported unchanged from examples/effect-assurance-demo
+// (src/model.mjs), plus the LEGACY_DECISION_RECORD profile that every proof
+// issued today maps to. The Go offline verifier carries the same model
+// (engine/internal/verificationinfra/offlineproof/assessment.go); the two must
+// stay in step.
+export const VERIFICATION_ASSESSMENT_SCHEMA_VERSION = "intentrax.verification.assessment/0.1";
+
+export const ASSURANCE_DIMENSIONS = Object.freeze([
+  "RECORD_INTEGRITY",
+  "SIGNER_AUTHENTICITY",
+  "AUTHORIZATION",
+  "EXECUTION_REPORTED",
+  "EXECUTION_ATTESTED",
+  "EFFECT_OBSERVED",
+  "EFFECT_CONFIRMED",
+  "CAUSAL_CHAIN",
+]);
+
+// §5.2, plus OBSERVED for the EFFECT_OBSERVED dimension.
+export const ASSESSMENT_RESULTS = Object.freeze([
+  "VERIFIED",
+  "REPORTED",
+  "ATTESTED",
+  "OBSERVED",
+  "CONFIRMED",
+  "CONTRADICTED",
+  "PENDING",
+  "INSUFFICIENT_EVIDENCE",
+  "NOT_ASSESSED",
+  "NOT_APPLICABLE",
+  "FAILED",
+]);
+
+export const ASSESSMENT_PROVENANCE = Object.freeze({
+  SELF_REPORTED: "SELF_REPORTED",
+  INTENTRAX_DECISION: "INTENTRAX_DECISION",
+  ENFORCEMENT_ATTESTED: "ENFORCEMENT_ATTESTED",
+  AUTHORITATIVE_SOURCE: "AUTHORITATIVE_SOURCE",
+  THIRD_PARTY_ATTESTED: "THIRD_PARTY_ATTESTED",
+  VERIFIER_COMPUTED: "VERIFIER_COMPUTED",
+});
+
+// Required dimensions per assurance profile. EXECUTION_REPORTED is
+// deliberately never required: a self-report can never satisfy a profile
+// (invariant 1).
+export const ASSURANCE_PROFILES = Object.freeze({
+  LEGACY_DECISION_RECORD: Object.freeze(["RECORD_INTEGRITY"]),
+  DECISION_RECORD: Object.freeze(["RECORD_INTEGRITY", "SIGNER_AUTHENTICITY", "AUTHORIZATION"]),
+  AUTHORIZED_AND_ATTESTED: Object.freeze(["RECORD_INTEGRITY", "SIGNER_AUTHENTICITY", "AUTHORIZATION", "EXECUTION_ATTESTED"]),
+  EFFECT_CONFIRMED: Object.freeze(["RECORD_INTEGRITY", "SIGNER_AUTHENTICITY", "AUTHORIZATION", "EFFECT_OBSERVED", "EFFECT_CONFIRMED"]),
+  CAUSAL_CHAIN: Object.freeze([
+    "RECORD_INTEGRITY", "SIGNER_AUTHENTICITY", "AUTHORIZATION", "EFFECT_OBSERVED", "EFFECT_CONFIRMED", "CAUSAL_CHAIN",
+  ]),
+});
+
+export const ASSURANCE_VERDICTS = Object.freeze({
+  VERIFICATION_FAILED: "VERIFICATION_FAILED",
+  INTEGRITY_ONLY: "INTEGRITY_ONLY",
+  CONFLICTING_EVIDENCE: "CONFLICTING_EVIDENCE",
+  PENDING_FINALITY: "PENDING_FINALITY",
+  INSUFFICIENT_EVIDENCE: "INSUFFICIENT_EVIDENCE",
+  VERIFIED_FOR_SCOPE: "VERIFIED_FOR_SCOPE",
+});
+
+// Rule precedence, first-matching rule = 0. Weakening any dimension must
+// never move the verdict to a later rule.
+export const ASSURANCE_VERDICT_PRECEDENCE = Object.freeze({
+  VERIFICATION_FAILED: 0,
+  INTEGRITY_ONLY: 1,
+  CONFLICTING_EVIDENCE: 2,
+  PENDING_FINALITY: 3,
+  INSUFFICIENT_EVIDENCE: 4,
+  VERIFIED_FOR_SCOPE: 5,
+});
+
+const WEAK_ASSESSMENT_RESULTS = new Set(["REPORTED", "INSUFFICIENT_EVIDENCE", "NOT_ASSESSED"]);
+const SATISFYING_ASSESSMENT_RESULTS = new Set(["VERIFIED", "ATTESTED", "OBSERVED", "CONFIRMED"]);
+
+// §5.4, verbatim order. `assessments` is { [dimension]: result }. A required
+// dimension that is missing or NOT_APPLICABLE counts as INSUFFICIENT_EVIDENCE
+// (invariant 4: never a bare pass).
+export function deriveAssuranceVerdict(assessments, profile) {
+  const required = Object.hasOwn(ASSURANCE_PROFILES, profile) ? ASSURANCE_PROFILES[profile] : undefined;
+  if (!required) {
+    throw new Error("unknown assurance profile " + profile);
+  }
+  const all = Object.values(assessments);
+  const req = required.map((d) => assessments[d] ?? "INSUFFICIENT_EVIDENCE");
+  if (all.includes("FAILED")) return ASSURANCE_VERDICTS.VERIFICATION_FAILED;
+  if (assessments.SIGNER_AUTHENTICITY !== "VERIFIED") return ASSURANCE_VERDICTS.INTEGRITY_ONLY;
+  if (req.includes("CONTRADICTED")) return ASSURANCE_VERDICTS.CONFLICTING_EVIDENCE;
+  if (req.includes("PENDING")) return ASSURANCE_VERDICTS.PENDING_FINALITY;
+  if (req.some((r) => WEAK_ASSESSMENT_RESULTS.has(r) || !SATISFYING_ASSESSMENT_RESULTS.has(r))) return ASSURANCE_VERDICTS.INSUFFICIENT_EVIDENCE;
+  return ASSURANCE_VERDICTS.VERIFIED_FOR_SCOPE;
+}
+
+// Published wording of each limitation code; identical to the Go verifier.
+export const ASSURANCE_LIMITATION_TEXT = Object.freeze({
+  EXECUTION_NOT_ATTESTED: "No trusted in-path enforcement component observed the action. The proof records an Intentrax decision, not an attested execution.",
+  EFFECT_NOT_VERIFIED: "No authoritative downstream system was queried. The proof does not show that any external effect happened.",
+  POLICY_BINDING_SYNTHETIC: "The policy reference in this proof is a fixed value of the proof pipeline, not a binding to an evaluated customer policy or mandate.",
+  COMPLETENESS_NOT_ESTABLISHED: "Nothing proves that every consequential agent action was routed through Intentrax. A proof covers only the action it records.",
+  SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS: "Signatures were checked against public keys carried inside the proof. Who signed is established only when every signing key is pinned to a trust-bearing key in a published Intentrax key set.",
+});
+
+// Limitations every proof under LEGACY_DECISION_RECORD carries.
+export const LEGACY_DECISION_RECORD_LIMITATIONS = Object.freeze([
+  "EXECUTION_NOT_ATTESTED",
+  "EFFECT_NOT_VERIFIED",
+  "POLICY_BINDING_SYNTHETIC",
+  "COMPLETENESS_NOT_ESTABLISHED",
+]);
+
+// Maps a verifier's signer-trust outcome to the SIGNER_AUTHENTICITY result.
+// Only TRUSTED against a supplied key set is VERIFIED. Without any key set the
+// dimension is NOT_ASSESSED; a REVOKED signer is FAILED; every other outcome
+// is INSUFFICIENT_EVIDENCE. Accepts the CLI's labels (UNPINNED_SIGNER,
+// MIXED_TRUST) and the Go verifier's (UNPINNED).
+export function signerAuthenticityAssessment(signerTrust, keySetSupplied) {
+  if (!keySetSupplied) return { result: "NOT_ASSESSED", reasons: ["NO_TRUSTED_KEY_SET"] };
+  switch (signerTrust) {
+    case "TRUSTED":
+      return { result: "VERIFIED", reasons: [] };
+    case "REVOKED_SIGNER":
+      return { result: "FAILED", reasons: ["REVOKED_SIGNER"] };
+    case "SANDBOX_NON_TRUST_BEARING":
+    case "INSUFFICIENT_TRUSTED_SIGNERS":
+    case "MIXED_TRUST":
+      return { result: "INSUFFICIENT_EVIDENCE", reasons: [signerTrust] };
+    default:
+      return { result: "INSUFFICIENT_EVIDENCE", reasons: ["UNPINNED_SIGNER"] };
+  }
+}
+
+// Builds the verification_assessment block for a proof whose record
+// integrity has been verified, under the LEGACY_DECISION_RECORD profile.
+// Nothing beyond the record and its signers is claimed.
+export function buildLegacyVerificationAssessment({ signerTrust, keySetSupplied } = {}) {
+  const signer = signerAuthenticityAssessment(signerTrust, keySetSupplied === true);
+  const signerVerified = signer.result === "VERIFIED";
+  const row = (dimension, result, provenance, reasons, limitations) => ({ dimension, result, provenance, reasons, limitations });
+  const assessments = [
+    row("RECORD_INTEGRITY", "VERIFIED", "VERIFIER_COMPUTED", [], []),
+    row("SIGNER_AUTHENTICITY", signer.result, "VERIFIER_COMPUTED", signer.reasons, signerVerified ? [] : ["SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS"]),
+    row("AUTHORIZATION", "NOT_ASSESSED", "INTENTRAX_DECISION", ["DECISION_NOT_REEVALUATED_OFFLINE"], ["POLICY_BINDING_SYNTHETIC"]),
+    row("EXECUTION_REPORTED", "NOT_ASSESSED", null, ["NO_EXECUTION_REPORT_IN_PROOF"], []),
+    row("EXECUTION_ATTESTED", "NOT_ASSESSED", null, ["NO_IN_PATH_ENFORCEMENT_ATTESTATION"], ["EXECUTION_NOT_ATTESTED"]),
+    row("EFFECT_OBSERVED", "NOT_ASSESSED", null, ["NO_EFFECT_EVIDENCE"], ["EFFECT_NOT_VERIFIED"]),
+    row("EFFECT_CONFIRMED", "NOT_ASSESSED", null, ["NO_EFFECT_EVIDENCE"], ["EFFECT_NOT_VERIFIED"]),
+    row("CAUSAL_CHAIN", "NOT_ASSESSED", null, ["NO_DELEGATION_CHAIN_IN_PROOF"], []),
+  ];
+  const verdict = deriveAssuranceVerdict(Object.fromEntries(assessments.map((a) => [a.dimension, a.result])), "LEGACY_DECISION_RECORD");
+  const codes = [...LEGACY_DECISION_RECORD_LIMITATIONS, ...(signerVerified ? [] : ["SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS"])];
+  return {
+    schema_version: VERIFICATION_ASSESSMENT_SCHEMA_VERSION,
+    assurance_profile: "LEGACY_DECISION_RECORD",
+    required_dimensions: [...ASSURANCE_PROFILES.LEGACY_DECISION_RECORD],
+    verdict,
+    assessments,
+    limitations: codes.map((code) => ({ code, text: ASSURANCE_LIMITATION_TEXT[code] })),
+  };
+}

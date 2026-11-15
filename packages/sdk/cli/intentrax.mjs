@@ -3,7 +3,7 @@ import { createHash, createPublicKey, verify as verifySignatureBytes } from "nod
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { buildAgentGatewayAdmissionEnvelope } from "../index.js";
+import { buildAgentGatewayAdmissionEnvelope, buildLegacyVerificationAssessment } from "../index.js";
 
 const VERSION = "1.4.0";
 const ADMISSION_SCHEMA_VERSION = "intentrax.runtime.agent_admission_request/1.0";
@@ -266,6 +266,9 @@ async function main(argv) {
       console.log(`Intentrax proof export verification PASS: proof=${output.registry_entry_id} signer=TRUSTED report=${output.report_path} hash=${output.report_hash}`);
     } else if (output.status === "SANDBOX_NON_TRUST_BEARING") {
       console.log(`Intentrax proof export verification: SANDBOX — not trust-bearing. Integrity and ed25519 signatures check out, and the signers are published sandbox keys. This shows the verification mechanics, not production assurance. proof=${output.registry_entry_id} report=${output.report_path}`);
+    }
+    if (!options.json) {
+      console.log(assessmentTable(output.verification_assessment));
     }
     if (exitCode !== 0) {
       console.error(signerTrustMessage(output));
@@ -1245,6 +1248,11 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
       canonical_json_authoritative: true,
       pdf_receipt_non_authoritative: true,
     },
+    // Additive: what this proof establishes and what it does not (assurance
+    // profile, per-dimension results, verdict by the fixed rule,
+    // machine-readable limitations). status, signer_trust and the exit code
+    // are unchanged. Covered by report_hash.
+    verification_assessment: buildLegacyVerificationAssessment({ signerTrust: trust.signer_trust, keySetSupplied: keySets.length > 0 }),
     report_hash: "",
   };
   return Object.freeze({
@@ -1506,6 +1514,22 @@ function classifySignerTrust(signers, keySets) {
   else if (resolved.every((signer) => signer.anchor.trust_bearing === false)) signerTrust = "SANDBOX_NON_TRUST_BEARING";
   else signerTrust = "MIXED_TRUST";
   return { signer_trust: signerTrust, signers: resolved, min_trusted_signers: minTrustedSigners, distinct_trusted_signers: distinctTrustedSigners };
+}
+
+// Short human table of the verification_assessment block: dimension, result,
+// provenance, limitations.
+function assessmentTable(assessment) {
+  const rows = [["DIMENSION", "RESULT", "PROVENANCE", "LIMITATIONS"]];
+  for (const row of assessment.assessments) {
+    rows.push([row.dimension, row.result, row.provenance ?? "-", row.limitations.length > 0 ? row.limitations.join(",") : "-"]);
+  }
+  const widths = rows[0].map((_, column) => Math.max(...rows.map((row) => row[column].length)));
+  const lines = [`assurance: profile=${assessment.assurance_profile} verdict=${assessment.verdict} required=${assessment.required_dimensions.join(",")}`];
+  for (const row of rows) {
+    lines.push(("  " + row.map((cell, column) => (column === row.length - 1 ? cell : cell.padEnd(widths[column] + 2))).join("")).trimEnd());
+  }
+  lines.push(`limitations: ${assessment.limitations.map((limitation) => limitation.code).join(", ")}`);
+  return lines.join("\n");
 }
 
 function signerTrustMessage(report) {
@@ -2753,6 +2777,19 @@ Proof export verification:
                                   requires (signatures may have been stripped)
     REVOKED_SIGNER / MIXED_TRUST 3
     any integrity or signature failure exits 2 (failed closed)
+
+  The report also carries verification_assessment, printed as a table: the
+  assurance profile (every proof issued today is LEGACY_DECISION_RECORD,
+  which requires only RECORD_INTEGRITY), a result per dimension, a verdict
+  derived by a fixed rule, and machine-readable limitations. Verdicts:
+    VERIFIED_FOR_SCOPE   record intact and signed by published trusted keys;
+                         the scope is the profile's required dimensions only
+    INTEGRITY_ONLY       record intact, signer not established
+    VERIFICATION_FAILED  a dimension failed (for example a REVOKED signer)
+  A legacy proof never claims execution, effect or policy evaluation:
+  EXECUTION_NOT_ATTESTED, EFFECT_NOT_VERIFIED, POLICY_BINDING_SYNTHETIC and
+  COMPLETENESS_NOT_ESTABLISHED are always listed. The exit code does not
+  depend on the assessment.
 
   The SDK ships the production key set (trust/production-key-set.json,
   min_trusted_signers 2) and the sandbox key set (trust/sandbox-key-set.json).

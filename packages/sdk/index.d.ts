@@ -341,3 +341,80 @@ export declare function normalizeCanonicalOutput(content: string | readonly stri
 export declare function canonicalOutputHash(content: string | readonly string[]): string;
 export declare function buildOutputBinding(content: string | readonly string[]): OutputBinding;
 export declare function verificationPointerMetaTag(pointer: { readonly proof_id: string; readonly verify_url: string }): string | null;
+
+// Evidence-quality model: per-dimension assessments, assurance profiles and a
+// verdict derived by a fixed rule (same model as the Go offline verifier).
+export type AssuranceDimension =
+  | "RECORD_INTEGRITY"
+  | "SIGNER_AUTHENTICITY"
+  | "AUTHORIZATION"
+  | "EXECUTION_REPORTED"
+  | "EXECUTION_ATTESTED"
+  | "EFFECT_OBSERVED"
+  | "EFFECT_CONFIRMED"
+  | "CAUSAL_CHAIN";
+export type AssessmentResult =
+  | "VERIFIED"
+  | "REPORTED"
+  | "ATTESTED"
+  | "OBSERVED"
+  | "CONFIRMED"
+  | "CONTRADICTED"
+  | "PENDING"
+  | "INSUFFICIENT_EVIDENCE"
+  | "NOT_ASSESSED"
+  | "NOT_APPLICABLE"
+  | "FAILED";
+export type AssessmentProvenance =
+  | "SELF_REPORTED"
+  | "INTENTRAX_DECISION"
+  | "ENFORCEMENT_ATTESTED"
+  | "AUTHORITATIVE_SOURCE"
+  | "THIRD_PARTY_ATTESTED"
+  | "VERIFIER_COMPUTED";
+export type AssuranceProfile =
+  | "LEGACY_DECISION_RECORD"
+  | "DECISION_RECORD"
+  | "AUTHORIZED_AND_ATTESTED"
+  | "EFFECT_CONFIRMED"
+  | "CAUSAL_CHAIN";
+export type AssuranceVerdict =
+  | "VERIFICATION_FAILED"
+  | "INTEGRITY_ONLY"
+  | "CONFLICTING_EVIDENCE"
+  | "PENDING_FINALITY"
+  | "INSUFFICIENT_EVIDENCE"
+  | "VERIFIED_FOR_SCOPE";
+export type AssuranceLimitationCode =
+  | "EXECUTION_NOT_ATTESTED"
+  | "EFFECT_NOT_VERIFIED"
+  | "POLICY_BINDING_SYNTHETIC"
+  | "COMPLETENESS_NOT_ESTABLISHED"
+  | "SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS";
+export interface DimensionAssessment {
+  readonly dimension: AssuranceDimension;
+  readonly result: AssessmentResult;
+  readonly provenance: AssessmentProvenance | null;
+  readonly reasons: readonly string[];
+  readonly limitations: readonly AssuranceLimitationCode[];
+}
+export interface VerificationAssessment {
+  readonly schema_version: "intentrax.verification.assessment/0.1";
+  readonly assurance_profile: AssuranceProfile;
+  readonly required_dimensions: readonly AssuranceDimension[];
+  readonly verdict: AssuranceVerdict;
+  readonly assessments: readonly DimensionAssessment[];
+  readonly limitations: readonly { readonly code: AssuranceLimitationCode; readonly text: string }[];
+}
+export declare const VERIFICATION_ASSESSMENT_SCHEMA_VERSION: "intentrax.verification.assessment/0.1";
+export declare const ASSURANCE_DIMENSIONS: readonly AssuranceDimension[];
+export declare const ASSESSMENT_RESULTS: readonly AssessmentResult[];
+export declare const ASSESSMENT_PROVENANCE: Readonly<Record<AssessmentProvenance, AssessmentProvenance>>;
+export declare const ASSURANCE_PROFILES: Readonly<Record<AssuranceProfile, readonly AssuranceDimension[]>>;
+export declare const ASSURANCE_VERDICTS: Readonly<Record<AssuranceVerdict, AssuranceVerdict>>;
+export declare const ASSURANCE_VERDICT_PRECEDENCE: Readonly<Record<AssuranceVerdict, number>>;
+export declare const ASSURANCE_LIMITATION_TEXT: Readonly<Record<AssuranceLimitationCode, string>>;
+export declare const LEGACY_DECISION_RECORD_LIMITATIONS: readonly AssuranceLimitationCode[];
+export declare function deriveAssuranceVerdict(assessments: Readonly<Partial<Record<AssuranceDimension, AssessmentResult>>>, profile: AssuranceProfile): AssuranceVerdict;
+export declare function signerAuthenticityAssessment(signerTrust: string, keySetSupplied: boolean): { result: AssessmentResult; reasons: string[] };
+export declare function buildLegacyVerificationAssessment(input: { readonly signerTrust: string; readonly keySetSupplied: boolean }): VerificationAssessment;
