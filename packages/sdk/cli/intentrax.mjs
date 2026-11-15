@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildAgentGatewayAdmissionEnvelope } from "../index.js";
 
-const VERSION = "1.3.0";
+const VERSION = "1.4.0";
 const ADMISSION_SCHEMA_VERSION = "intentrax.runtime.agent_admission_request/1.0";
 const INIT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_init/1.0";
 const ACTION_RECEIPT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_action_receipt/1.0";
@@ -2258,12 +2258,23 @@ async function buildNativeHookResult(event = {}, options = {}) {
     admission_request,
     admission_response,
     original_event_ref: stableNativeHookEventRef(event),
+    // Send this exact value as idempotency_key on /v1/intents/execute. The
+    // engine links the execution under SHA-256(idempotency_key), which equals
+    // admission_request.idempotency_key_hash, so the execution correlates with
+    // this admission instead of reading as unadmitted.
+    execute_idempotency_key: hookExecuteIdempotencyKey(admission_request.request_payload_hash),
     submitted: submit,
     mutation_performed: false,
     tool_execution_performed: false,
     proof_generation_performed: false,
     policy_re_evaluation_performed: false,
   });
+}
+
+// The raw execute idempotency key for an admission (same rule as the SDK's
+// agentHookExecuteIdempotencyKey). The admission carries only its SHA-256.
+function hookExecuteIdempotencyKey(requestPayloadHash) {
+  return "INTENTRAX_AGENT_HOOK_IDEMPOTENCY_V1" + requestPayloadHash;
 }
 
 async function buildNativeAdmissionForHook(event = {}) {
@@ -2277,7 +2288,7 @@ async function buildNativeAdmissionForHook(event = {}) {
     ...sample,
     request_payload_hash: requestPayloadHash,
     protocol_payload_ref: \`sha256:\${requestPayloadHash}\`,
-    idempotency_key_hash: sha256Hex("INTENTRAX_AGENT_HOOK_IDEMPOTENCY_V1" + requestPayloadHash),
+    idempotency_key_hash: sha256Hex(hookExecuteIdempotencyKey(requestPayloadHash)),
   });
 }
 

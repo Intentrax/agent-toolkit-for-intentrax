@@ -1,6 +1,6 @@
 {
   "name": "@intentrax/sdk",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Intentrax deterministic public SDK for proof verification and API-wrapper execution.",
   "type": "module",
   "license": "Apache-2.0",

@@ -120,6 +120,11 @@ export declare function verificationRequestHash(request: VerifyProofRequest): st
 export declare function idempotencyInput(request: VerifyProofRequest): Record<string, unknown>;
 export declare function createIdempotencyKey(request: VerifyProofRequest): string;
 export declare function admissionIdempotencyKeyHash(request: VerifyProofRequest): string;
+/** SHA-256 hex of a raw execute idempotency key: the admission `idempotency_key_hash` that correlates with that execution. */
+export declare function executeIdempotencyKeyHash(idempotencyKey: string): string;
+export declare const AGENT_HOOK_IDEMPOTENCY_KEY_DOMAIN: "INTENTRAX_AGENT_HOOK_IDEMPOTENCY_V1";
+/** The raw execute idempotency key a generated agent hook derives from its admission `request_payload_hash`. */
+export declare function agentHookExecuteIdempotencyKey(requestPayloadHash: string): string;
 export declare function buildVerificationEnvelope(request: VerifyProofRequest): {
   status: "PASS";
   output: {
