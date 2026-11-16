@@ -160,6 +160,26 @@ production key set is bundled, so you don't need any flags. Pass extra key sets
 | `REVOKED_SIGNER`, `MIXED_TRUST` | 3 | Not a trusted result |
 | (none) | 2 | An integrity, signature, or binding check failed (failed closed) |
 
+Policy binding (SDK 1.5.0). A proof issued under the AEP 1.1 policy-binding
+profile carries `policy_binding` inside its signed AEP. The binding names the
+hash-pinned policy the engine evaluated (`source_policy_hash`,
+`compiled_policy_hash`), the evaluation (`evaluation_hash`,
+`execution_event_hash`, `decision`, `rule_id`) and, when one exists, a
+`mandate_hash`. It also lists every constraint of the matched rule with an
+explicit `status`: `NOT_EVALUATED` (not checked, no evidence) or `SATISFIED`
+(with the `evidence_hash` of a real approval artifact). Today every constraint
+is `NOT_EVALUATED`. `verify-proof` copies the binding into the report as
+`policy_binding`, and states it in words as `policy_binding_statement`. For
+example, an execute proof reads "evaluated COMPLIANT … Constraint
+constraint.operator-review (REQUIRE_APPROVAL): NOT CHECKED (NOT_EVALUATED)",
+meaning allowed, approval not checked. Proofs without a binding verify exactly
+as before, and their report has neither key. A binding fails closed (exit 2),
+even when its signatures are genuine, if it is malformed, claims anything other
+than `enforcement: "RECORD_ONLY"`, has `SATISFIED` without evidence or
+`NOT_EVALUATED` with evidence, or has an unknown constraint status.
+`RECORD_ONLY` means the decision was recorded when the proof was issued. It
+does not mean the decision was enforced.
+
 A passing verification shows the record is unaltered since signing, genuinely
 signed, and bound to its own AEP. It does not show that the described action was
 carried out or had its intended effect. The verifier also rejects private key
@@ -185,6 +205,13 @@ table. It states what the proof establishes and what it does not:
   `EXECUTION_NOT_ATTESTED`, `EFFECT_NOT_VERIFIED`, `POLICY_BINDING_SYNTHETIC` and
   `COMPLETENESS_NOT_ESTABLISHED`, plus `SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS`
   when the signer is not established.
+- When the proof seals an AEP 1.1 `policy_binding` (RECORD_ONLY), `AUTHORIZATION`
+  reports the recorded decision without checking it: `COMPLIANT` is `REPORTED`,
+  `NON_COMPLIANT` is `CONTRADICTED`, `ERROR` is `INSUFFICIENT_EVIDENCE`, never
+  `VERIFIED`. `POLICY_BINDING_SYNTHETIC` is then replaced by
+  `POLICY_EVALUATION_NOT_RECHECKABLE` and `POLICY_DECISION_NOT_ENFORCED`, plus
+  `POLICY_CONSTRAINT_NOT_EVALUATED` when a constraint was not checked. The
+  verdict does not change.
 
 The block is additive: `status`, `signer_trust` and the exit code are unchanged.
 The model is exported (`deriveAssuranceVerdict`, `buildLegacyVerificationAssessment`,

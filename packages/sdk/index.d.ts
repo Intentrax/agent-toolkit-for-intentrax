@@ -390,7 +390,10 @@ export type AssuranceLimitationCode =
   | "EFFECT_NOT_VERIFIED"
   | "POLICY_BINDING_SYNTHETIC"
   | "COMPLETENESS_NOT_ESTABLISHED"
-  | "SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS";
+  | "SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS"
+  | "POLICY_EVALUATION_NOT_RECHECKABLE"
+  | "POLICY_DECISION_NOT_ENFORCED"
+  | "POLICY_CONSTRAINT_NOT_EVALUATED";
 export interface DimensionAssessment {
   readonly dimension: AssuranceDimension;
   readonly result: AssessmentResult;
@@ -417,4 +420,10 @@ export declare const ASSURANCE_LIMITATION_TEXT: Readonly<Record<AssuranceLimitat
 export declare const LEGACY_DECISION_RECORD_LIMITATIONS: readonly AssuranceLimitationCode[];
 export declare function deriveAssuranceVerdict(assessments: Readonly<Partial<Record<AssuranceDimension, AssessmentResult>>>, profile: AssuranceProfile): AssuranceVerdict;
 export declare function signerAuthenticityAssessment(signerTrust: string, keySetSupplied: boolean): { result: AssessmentResult; reasons: string[] };
-export declare function buildLegacyVerificationAssessment(input: { readonly signerTrust: string; readonly keySetSupplied: boolean }): VerificationAssessment;
+/** The policy binding sealed in a proof's signed AEP, as verify-proof reports it. */
+export interface SealedPolicyBindingSummary {
+  readonly decision: string;
+  readonly constraints?: readonly { readonly constraint_id: string; readonly status: string }[];
+}
+export declare function authorizationAssessment(policyBinding: SealedPolicyBindingSummary | null | undefined): { result: AssessmentResult; reasons: string[]; limitations: AssuranceLimitationCode[] };
+export declare function buildLegacyVerificationAssessment(input: { readonly signerTrust: string; readonly keySetSupplied: boolean; readonly policyBinding?: SealedPolicyBindingSummary | null }): VerificationAssessment;

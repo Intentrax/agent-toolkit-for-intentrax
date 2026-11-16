@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildAgentGatewayAdmissionEnvelope, buildLegacyVerificationAssessment } from "../index.js";
 
-const VERSION = "1.4.0";
+const VERSION = "1.5.0";
 const ADMISSION_SCHEMA_VERSION = "intentrax.runtime.agent_admission_request/1.0";
 const INIT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_init/1.0";
 const ACTION_RECEIPT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_action_receipt/1.0";
@@ -1198,6 +1198,13 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
   if (signatures.invalid.length > 0) {
     fail(`proof export verification failed closed: ${signatures.invalid.join(",")}`);
   }
+  // The signed AEP bytes are verified above; a policy binding sealed in them
+  // (aep.policy_binding, AEP 1.1 policy-binding profile) must be well formed
+  // and is reported as sealed. Absence is never a failure.
+  const policyBinding = sealedPolicyBinding(record.canonical_aep_json);
+  if (policyBinding.invalid.length > 0) {
+    fail(`proof export verification failed closed: ${policyBinding.invalid.join(",")}`);
+  }
   const trust = classifySignerTrust(signatures.signers, keySets);
   const withoutHash = {
     schema_version: LOCAL_PROOF_VERIFICATION_SCHEMA_VERSION,
@@ -1230,6 +1237,14 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
     proof_record_hash: record.record_hash,
     proof_lookup_hash: proofExport.result_hash,
     verification_bundle_hash: bundle.bundle_hash,
+    // Present only when the signed AEP seals one: RECORD_ONLY means the
+    // policy evaluation was recorded, never that it was enforced.
+    // policy_binding_statement says the same in words (shared wording with
+    // the Go verifier and the public verify page): every constraint's status
+    // is spelled out, so an unchecked approval reads NOT CHECKED.
+    ...(policyBinding.binding === null
+      ? {}
+      : { policy_binding: policyBinding.binding, policy_binding_statement: policyBindingStatement(policyBinding.binding) }),
     hash_algorithm: "SHA-256",
     boundary_assertions: {
       offline_verifier_used: true,
@@ -1252,13 +1267,130 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
     // profile, per-dimension results, verdict by the fixed rule,
     // machine-readable limitations). status, signer_trust and the exit code
     // are unchanged. Covered by report_hash.
-    verification_assessment: buildLegacyVerificationAssessment({ signerTrust: trust.signer_trust, keySetSupplied: keySets.length > 0 }),
+    verification_assessment: buildLegacyVerificationAssessment({ signerTrust: trust.signer_trust, keySetSupplied: keySets.length > 0, policyBinding: policyBinding.binding }),
     report_hash: "",
   };
   return Object.freeze({
     ...withoutHash,
     report_hash: sha256Hex(LOCAL_PROOF_VERIFY_DOMAIN + canonicalJson(withoutHash)),
   });
+}
+
+// AEP 1.1 policy-binding profile (aep.policy_binding): the RECORD_ONLY
+// evaluation of a hash-pinned policy, sealed inside the signed AEP. Mirrors
+// the Go verifier (engine/internal/registrylayer/persistence/policy_binding.go):
+// absent => no binding and no failure; present => exactly these members, all
+// strings except constraints (mandate_hash optional), the supported
+// profile/algorithm/enforcement, a policy VM decision, 64-hex non-degenerate
+// hashes, and a constraints array whose entries carry an explicit status
+// (SATISFIED requires evidence_hash, NOT_EVALUATED forbids it, ids unique and
+// ascending); anything else fails closed. It never means the decision was
+// enforced.
+const POLICY_BINDING_PROFILE = "intentrax.aep.policy_binding/1.1";
+const POLICY_BINDING_REQUIRED_MEMBERS = Object.freeze([
+  "binding_profile", "compiled_policy_hash", "constraints", "decision", "enforcement", "evaluation_hash",
+  "execution_event_hash", "hash_algorithm", "policy_id", "policy_version", "rule_id", "source_policy_hash",
+]);
+const POLICY_CONSTRAINT_MEMBERS = Object.freeze(["constraint_id", "status", "type"]);
+const POLICY_CONSTRAINT_SATISFIED = "SATISFIED";
+const POLICY_CONSTRAINT_NOT_EVALUATED = "NOT_EVALUATED";
+const POLICY_BINDING_HASH_MEMBERS = Object.freeze(["compiled_policy_hash", "evaluation_hash", "execution_event_hash", "source_policy_hash"]);
+const POLICY_BINDING_DECISIONS = new Set(["COMPLIANT", "NON_COMPLIANT", "ERROR"]);
+
+function isPolicyBindingHash(value) {
+  return isSHA256(value) && !/^(.)\1{63}$/.test(value);
+}
+
+function sealedPolicyBinding(canonicalAEPJSON) {
+  let aep;
+  try {
+    aep = JSON.parse(canonicalAEPJSON);
+  } catch {
+    return { binding: null, invalid: [] };
+  }
+  if (!isRecord(aep) || !Object.hasOwn(aep, "policy_binding")) return { binding: null, invalid: [] };
+  const binding = aep.policy_binding;
+  if (!isRecord(binding)) return { binding: null, invalid: ["policy_binding"] };
+  const members = Object.keys(binding).sort();
+  const expected = Object.hasOwn(binding, "mandate_hash")
+    ? [...POLICY_BINDING_REQUIRED_MEMBERS, "mandate_hash"].sort()
+    : [...POLICY_BINDING_REQUIRED_MEMBERS];
+  if (members.length !== expected.length || members.some((member, index) => member !== expected[index])) {
+    return { binding: null, invalid: ["policy_binding.members"] };
+  }
+  const invalid = [];
+  for (const member of members) {
+    if (member !== "constraints" && typeof binding[member] !== "string") invalid.push(`policy_binding.${member}`);
+  }
+  if (invalid.length > 0) return { binding: null, invalid };
+  const constraints = sealedPolicyConstraints(binding.constraints);
+  if (constraints.malformed.length > 0) return { binding: null, invalid: constraints.malformed };
+  invalid.push(...constraints.invalid);
+  if (binding.binding_profile !== POLICY_BINDING_PROFILE) invalid.push("policy_binding.binding_profile");
+  if (!POLICY_BINDING_DECISIONS.has(binding.decision)) invalid.push("policy_binding.decision");
+  if (binding.enforcement !== "RECORD_ONLY") invalid.push("policy_binding.enforcement");
+  if (binding.hash_algorithm !== "SHA-256") invalid.push("policy_binding.hash_algorithm");
+  const hashMembers = Object.hasOwn(binding, "mandate_hash") ? [...POLICY_BINDING_HASH_MEMBERS, "mandate_hash"] : POLICY_BINDING_HASH_MEMBERS;
+  for (const member of hashMembers) {
+    if (!isPolicyBindingHash(binding[member])) invalid.push(`policy_binding.${member}`);
+  }
+  for (const member of ["policy_id", "policy_version", "rule_id"]) {
+    if (binding[member] === "") invalid.push(`policy_binding.${member}`);
+  }
+  if (invalid.length > 0) return { binding: null, invalid: invalid.sort() };
+  const normalized = {};
+  for (const member of members) normalized[member] = member === "constraints" ? constraints.list : binding[member];
+  return { binding: Object.freeze(normalized), invalid: [] };
+}
+
+function sealedPolicyConstraints(value) {
+  if (!Array.isArray(value)) return { list: [], malformed: ["policy_binding.constraints"], invalid: [] };
+  const list = [];
+  const invalid = [];
+  for (const [index, constraint] of value.entries()) {
+    const at = `policy_binding.constraints[${index}]`;
+    if (!isRecord(constraint)) return { list: [], malformed: [at], invalid: [] };
+    const members = Object.keys(constraint).sort();
+    const expected = Object.hasOwn(constraint, "evidence_hash")
+      ? [...POLICY_CONSTRAINT_MEMBERS, "evidence_hash"].sort()
+      : [...POLICY_CONSTRAINT_MEMBERS];
+    if (members.length !== expected.length || members.some((member, i) => member !== expected[i])) {
+      return { list: [], malformed: [`${at}.members`], invalid: [] };
+    }
+    for (const member of members) {
+      if (typeof constraint[member] !== "string") return { list: [], malformed: [`${at}.${member}`], invalid: [] };
+    }
+    if (constraint.constraint_id === "" || (index > 0 && constraint.constraint_id <= value[index - 1].constraint_id)) {
+      invalid.push(`${at}.constraint_id`);
+    }
+    if (constraint.type === "") invalid.push(`${at}.type`);
+    if (constraint.status === POLICY_CONSTRAINT_SATISFIED) {
+      if (!isPolicyBindingHash(constraint.evidence_hash)) invalid.push(`${at}.evidence_hash`);
+    } else if (constraint.status === POLICY_CONSTRAINT_NOT_EVALUATED) {
+      if (Object.hasOwn(constraint, "evidence_hash")) invalid.push(`${at}.evidence_hash`);
+    } else {
+      invalid.push(`${at}.status`);
+    }
+    const normalized = {};
+    for (const member of members) normalized[member] = constraint[member];
+    list.push(Object.freeze(normalized));
+  }
+  return { list: Object.freeze(list), malformed: [], invalid };
+}
+
+// The shared verifier wording for a verified policy binding (identical to
+// PolicyBindingStatement in the Go verifier and the public verify facade).
+function policyBindingStatement(binding) {
+  const head = `Policy ${binding.policy_id}@${binding.policy_version} evaluated ${binding.decision} (rule ${binding.rule_id}); recorded only, never enforced.`;
+  if (binding.constraints.length === 0) return `${head} The matched rule has no constraints.`;
+  return [head, ...binding.constraints.map(policyConstraintStatement)].join(" ");
+}
+
+function policyConstraintStatement(constraint) {
+  if (constraint.status === POLICY_CONSTRAINT_SATISFIED) {
+    return `Constraint ${constraint.constraint_id} (${constraint.type}): SATISFIED; evidence ${constraint.evidence_hash} is bound by this proof.`;
+  }
+  return `Constraint ${constraint.constraint_id} (${constraint.type}): NOT CHECKED (NOT_EVALUATED); this proof binds no evidence that it was met.`;
 }
 
 // Verifies what the record's integrity hashes cannot: that the signatures are

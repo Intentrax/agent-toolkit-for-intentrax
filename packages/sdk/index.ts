@@ -1139,6 +1139,11 @@ export const ASSURANCE_LIMITATION_TEXT = Object.freeze({
   POLICY_BINDING_SYNTHETIC: "The policy reference in this proof is a fixed value of the proof pipeline, not a binding to an evaluated customer policy or mandate.",
   COMPLETENESS_NOT_ESTABLISHED: "Nothing proves that every consequential agent action was routed through Intentrax. A proof covers only the action it records.",
   SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS: "Signatures were checked against public keys carried inside the proof. Who signed is established only when every signing key is pinned to a trust-bearing key in a published Intentrax key set.",
+  // Used instead of POLICY_BINDING_SYNTHETIC when the signed AEP seals a
+  // policy binding (AEP 1.1 policy-binding profile, RECORD_ONLY).
+  POLICY_EVALUATION_NOT_RECHECKABLE: "The proof seals Intentrax's evaluation of a hash-pinned policy, but this verifier cannot re-run it. The recorded decision is Intentrax's statement, not an independently checked result.",
+  POLICY_DECISION_NOT_ENFORCED: "The policy binding is RECORD_ONLY: the evaluation was recorded with the action, and nothing shows the action was gated on its result.",
+  POLICY_CONSTRAINT_NOT_EVALUATED: "At least one constraint of the matched policy rule was not checked. This proof binds no evidence that it was met.",
 });
 
 // Limitations every proof under LEGACY_DECISION_RECORD carries.
@@ -1170,17 +1175,48 @@ export function signerAuthenticityAssessment(signerTrust, keySetSupplied) {
   }
 }
 
+// Maps the policy binding sealed in the signed AEP (null when there is none)
+// to the AUTHORIZATION result. Without a binding the policy reference is
+// synthetic and nothing is assessed. With one, the recorded decision is
+// reported but never independently checked, so it can never be VERIFIED:
+// COMPLIANT is REPORTED, NON_COMPLIANT is CONTRADICTED, ERROR is
+// INSUFFICIENT_EVIDENCE. Same rule as the Go verifier.
+export function authorizationAssessment(policyBinding) {
+  if (policyBinding === null || policyBinding === undefined) {
+    return { result: "NOT_ASSESSED", reasons: ["DECISION_NOT_REEVALUATED_OFFLINE"], limitations: ["POLICY_BINDING_SYNTHETIC"] };
+  }
+  let result = "INSUFFICIENT_EVIDENCE";
+  const reasons = [];
+  if (policyBinding.decision === "COMPLIANT") {
+    result = "REPORTED";
+    reasons.push("POLICY_DECISION_COMPLIANT");
+  } else if (policyBinding.decision === "NON_COMPLIANT") {
+    result = "CONTRADICTED";
+    reasons.push("POLICY_DECISION_NON_COMPLIANT");
+  } else {
+    reasons.push("POLICY_DECISION_ERROR");
+  }
+  reasons.push("POLICY_EVALUATION_NOT_RECHECKED_OFFLINE");
+  const limitations = ["POLICY_EVALUATION_NOT_RECHECKABLE", "POLICY_DECISION_NOT_ENFORCED"];
+  const unchecked = (Array.isArray(policyBinding.constraints) ? policyBinding.constraints : []).filter((constraint) => constraint.status !== "SATISFIED");
+  for (const constraint of unchecked) reasons.push(`POLICY_CONSTRAINT_NOT_EVALUATED:${constraint.constraint_id}`);
+  if (unchecked.length > 0) limitations.push("POLICY_CONSTRAINT_NOT_EVALUATED");
+  return { result, reasons, limitations };
+}
+
 // Builds the verification_assessment block for a proof whose record
 // integrity has been verified, under the LEGACY_DECISION_RECORD profile.
-// Nothing beyond the record and its signers is claimed.
-export function buildLegacyVerificationAssessment({ signerTrust, keySetSupplied } = {}) {
+// policyBinding is the binding sealed in the signed AEP, or null. Nothing
+// beyond the record, its signers and the recorded policy decision is claimed.
+export function buildLegacyVerificationAssessment({ signerTrust, keySetSupplied, policyBinding = null } = {}) {
   const signer = signerAuthenticityAssessment(signerTrust, keySetSupplied === true);
+  const authorization = authorizationAssessment(policyBinding);
   const signerVerified = signer.result === "VERIFIED";
   const row = (dimension, result, provenance, reasons, limitations) => ({ dimension, result, provenance, reasons, limitations });
   const assessments = [
     row("RECORD_INTEGRITY", "VERIFIED", "VERIFIER_COMPUTED", [], []),
     row("SIGNER_AUTHENTICITY", signer.result, "VERIFIER_COMPUTED", signer.reasons, signerVerified ? [] : ["SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS"]),
-    row("AUTHORIZATION", "NOT_ASSESSED", "INTENTRAX_DECISION", ["DECISION_NOT_REEVALUATED_OFFLINE"], ["POLICY_BINDING_SYNTHETIC"]),
+    row("AUTHORIZATION", authorization.result, "INTENTRAX_DECISION", authorization.reasons, authorization.limitations),
     row("EXECUTION_REPORTED", "NOT_ASSESSED", null, ["NO_EXECUTION_REPORT_IN_PROOF"], []),
     row("EXECUTION_ATTESTED", "NOT_ASSESSED", null, ["NO_IN_PATH_ENFORCEMENT_ATTESTATION"], ["EXECUTION_NOT_ATTESTED"]),
     row("EFFECT_OBSERVED", "NOT_ASSESSED", null, ["NO_EFFECT_EVIDENCE"], ["EFFECT_NOT_VERIFIED"]),
@@ -1188,7 +1224,12 @@ export function buildLegacyVerificationAssessment({ signerTrust, keySetSupplied 
     row("CAUSAL_CHAIN", "NOT_ASSESSED", null, ["NO_DELEGATION_CHAIN_IN_PROOF"], []),
   ];
   const verdict = deriveAssuranceVerdict(Object.fromEntries(assessments.map((a) => [a.dimension, a.result])), "LEGACY_DECISION_RECORD");
-  const codes = [...LEGACY_DECISION_RECORD_LIMITATIONS, ...(signerVerified ? [] : ["SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS"])];
+  // The fixed legacy set, with POLICY_BINDING_SYNTHETIC replaced by the
+  // AUTHORIZATION limitations when the proof seals a policy binding.
+  const codes = [
+    ...LEGACY_DECISION_RECORD_LIMITATIONS.flatMap((code) => (code === "POLICY_BINDING_SYNTHETIC" ? authorization.limitations : [code])),
+    ...(signerVerified ? [] : ["SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS"]),
+  ];
   return {
     schema_version: VERIFICATION_ASSESSMENT_SCHEMA_VERSION,
     assurance_profile: "LEGACY_DECISION_RECORD",
