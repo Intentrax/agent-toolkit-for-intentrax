@@ -1141,9 +1141,12 @@ export const ASSURANCE_LIMITATION_TEXT = Object.freeze({
   SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS: "Signatures were checked against public keys carried inside the proof. Who signed is established only when every signing key is pinned to a trust-bearing key in a published Intentrax key set.",
   // Used instead of POLICY_BINDING_SYNTHETIC when the signed AEP seals a
   // policy binding (AEP 1.1 policy-binding profile, RECORD_ONLY).
-  POLICY_EVALUATION_NOT_RECHECKABLE: "The proof seals Intentrax's evaluation of a hash-pinned policy, but this verifier cannot re-run it. The recorded decision is Intentrax's statement, not an independently checked result.",
+  POLICY_EVALUATION_NOT_RECHECKABLE: "The proof seals Intentrax's evaluation of a hash-pinned policy, but this verifier did not re-run it: the evaluated event cannot be rebuilt from this proof, or the policy document was not available. The recorded decision is Intentrax's statement, not an independently checked result.",
   POLICY_DECISION_NOT_ENFORCED: "The policy binding is RECORD_ONLY: the evaluation was recorded with the action, and nothing shows the action was gated on its result.",
   POLICY_CONSTRAINT_NOT_EVALUATED: "At least one constraint of the matched policy rule was not checked. This proof binds no evidence that it was met.",
+  // Used instead of POLICY_EVALUATION_NOT_RECHECKABLE when the verifier
+  // re-ran the sealed evaluation and it matched.
+  POLICY_EVENT_SELF_REPORTED: "The verifier re-ran the published policy over the facts sealed in this proof and got the same evaluation: the decision follows from those facts and the published rule. The re-check does not independently witness that the facts (such as mutation_performed) are true; the runtime's signature attests to them.",
 });
 
 // Limitations every proof under LEGACY_DECISION_RECORD carries.
@@ -1176,19 +1179,24 @@ export function signerAuthenticityAssessment(signerTrust, keySetSupplied) {
 }
 
 // Maps the policy binding sealed in the signed AEP (null when there is none)
-// to the AUTHORIZATION result. Without a binding the policy reference is
-// synthetic and nothing is assessed. With one, the recorded decision is
-// reported but never independently checked, so it can never be VERIFIED:
-// COMPLIANT is REPORTED, NON_COMPLIANT is CONTRADICTED, ERROR is
-// INSUFFICIENT_EVIDENCE. Same rule as the Go verifier.
-export function authorizationAssessment(policyBinding) {
+// and the outcome of re-running it (null when no re-run was attempted) to the
+// AUTHORIZATION result, provenance, reasons and limitations. Same rule as the
+// Go verifier. Without a binding nothing is assessed. Only a re-run that
+// MATCHed lifts the dimension above REPORTED: a re-checked COMPLIANT decision
+// with no unchecked constraint is VERIFIED (VERIFIER_COMPUTED); with an
+// unchecked constraint it stays REPORTED. Without a matching re-run COMPLIANT
+// is REPORTED (INTENTRAX_DECISION). NON_COMPLIANT is CONTRADICTED and ERROR is
+// INSUFFICIENT_EVIDENCE either way.
+export function authorizationAssessment(policyBinding, policyReevaluation = null) {
   if (policyBinding === null || policyBinding === undefined) {
-    return { result: "NOT_ASSESSED", reasons: ["DECISION_NOT_REEVALUATED_OFFLINE"], limitations: ["POLICY_BINDING_SYNTHETIC"] };
+    return { result: "NOT_ASSESSED", provenance: "INTENTRAX_DECISION", reasons: ["DECISION_NOT_REEVALUATED_OFFLINE"], limitations: ["POLICY_BINDING_SYNTHETIC"] };
   }
+  const rechecked = policyReevaluation !== null && policyReevaluation !== undefined && policyReevaluation.status === "MATCH";
+  const unchecked = (Array.isArray(policyBinding.constraints) ? policyBinding.constraints : []).filter((constraint) => constraint.status !== "SATISFIED");
   let result = "INSUFFICIENT_EVIDENCE";
   const reasons = [];
   if (policyBinding.decision === "COMPLIANT") {
-    result = "REPORTED";
+    result = rechecked && unchecked.length === 0 ? "VERIFIED" : "REPORTED";
     reasons.push("POLICY_DECISION_COMPLIANT");
   } else if (policyBinding.decision === "NON_COMPLIANT") {
     result = "CONTRADICTED";
@@ -1196,27 +1204,36 @@ export function authorizationAssessment(policyBinding) {
   } else {
     reasons.push("POLICY_DECISION_ERROR");
   }
-  reasons.push("POLICY_EVALUATION_NOT_RECHECKED_OFFLINE");
-  const limitations = ["POLICY_EVALUATION_NOT_RECHECKABLE", "POLICY_DECISION_NOT_ENFORCED"];
-  const unchecked = (Array.isArray(policyBinding.constraints) ? policyBinding.constraints : []).filter((constraint) => constraint.status !== "SATISFIED");
+  let limitations;
+  if (rechecked) {
+    reasons.push("POLICY_EVALUATION_RECHECKED");
+    limitations = ["POLICY_EVENT_SELF_REPORTED", "POLICY_DECISION_NOT_ENFORCED"];
+  } else {
+    reasons.push("POLICY_EVALUATION_NOT_RECHECKED_OFFLINE");
+    const reason = policyReevaluation === null || policyReevaluation === undefined ? "" : policyReevaluation.reason;
+    if (typeof reason === "string" && reason !== "") reasons.push(`POLICY_REEVALUATION_${reason}`);
+    limitations = ["POLICY_EVALUATION_NOT_RECHECKABLE", "POLICY_DECISION_NOT_ENFORCED"];
+  }
   for (const constraint of unchecked) reasons.push(`POLICY_CONSTRAINT_NOT_EVALUATED:${constraint.constraint_id}`);
   if (unchecked.length > 0) limitations.push("POLICY_CONSTRAINT_NOT_EVALUATED");
-  return { result, reasons, limitations };
+  return { result, provenance: rechecked ? "VERIFIER_COMPUTED" : "INTENTRAX_DECISION", reasons, limitations };
 }
 
 // Builds the verification_assessment block for a proof whose record
 // integrity has been verified, under the LEGACY_DECISION_RECORD profile.
-// policyBinding is the binding sealed in the signed AEP, or null. Nothing
-// beyond the record, its signers and the recorded policy decision is claimed.
-export function buildLegacyVerificationAssessment({ signerTrust, keySetSupplied, policyBinding = null } = {}) {
+// policyBinding is the binding sealed in the signed AEP, or null;
+// policyReevaluation is the outcome of re-running it, or null. Nothing beyond
+// the record, its signers and the (re-checked or recorded) policy decision is
+// claimed.
+export function buildLegacyVerificationAssessment({ signerTrust, keySetSupplied, policyBinding = null, policyReevaluation = null } = {}) {
   const signer = signerAuthenticityAssessment(signerTrust, keySetSupplied === true);
-  const authorization = authorizationAssessment(policyBinding);
+  const authorization = authorizationAssessment(policyBinding, policyReevaluation);
   const signerVerified = signer.result === "VERIFIED";
   const row = (dimension, result, provenance, reasons, limitations) => ({ dimension, result, provenance, reasons, limitations });
   const assessments = [
     row("RECORD_INTEGRITY", "VERIFIED", "VERIFIER_COMPUTED", [], []),
     row("SIGNER_AUTHENTICITY", signer.result, "VERIFIER_COMPUTED", signer.reasons, signerVerified ? [] : ["SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS"]),
-    row("AUTHORIZATION", authorization.result, "INTENTRAX_DECISION", authorization.reasons, authorization.limitations),
+    row("AUTHORIZATION", authorization.result, authorization.provenance, authorization.reasons, authorization.limitations),
     row("EXECUTION_REPORTED", "NOT_ASSESSED", null, ["NO_EXECUTION_REPORT_IN_PROOF"], []),
     row("EXECUTION_ATTESTED", "NOT_ASSESSED", null, ["NO_IN_PATH_ENFORCEMENT_ATTESTATION"], ["EXECUTION_NOT_ATTESTED"]),
     row("EFFECT_OBSERVED", "NOT_ASSESSED", null, ["NO_EFFECT_EVIDENCE"], ["EFFECT_NOT_VERIFIED"]),
@@ -1238,4 +1255,654 @@ export function buildLegacyVerificationAssessment({ signerTrust, keySetSupplied,
     assessments,
     limitations: codes.map((code) => ({ code, text: ASSURANCE_LIMITATION_TEXT[code] })),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Policy re-evaluation (AEP 1.1 policy-binding profile, P1-C step 2).
+//
+// A port of the Go policy engine pipeline (engine/internal/policyengine:
+// C2.1 DSL -> C2.2 parser -> C2.3 bytecode compiler -> C2.4 VM) that
+// recomputes every value an aep.policy_binding seals: source_policy_hash,
+// compiled_policy_hash, execution_event_hash, evaluation_hash, decision,
+// rule_id and the matched rule's constraints. A verifier fetches the policy by
+// hash (GET /v1/policies/{source_policy_hash}), rebuilds the evaluated event,
+// re-runs it here, and requires identical values instead of trusting them.
+//
+// It must reproduce the Go engine byte for byte: the shared vectors in
+// test-fixtures/policy-binding/policy-reevaluation-vectors.json are
+// generated by the Go engine and checked by policy-reevaluation.test.mjs. Any
+// divergence fails closed (a hash mismatch), never open.
+// ---------------------------------------------------------------------------
+
+export const POLICY_HASH_DOMAIN = "INTENTRAX_POLICY_V1";
+export const POLICY_BYTECODE_HASH_DOMAIN = "INTENTRAX_BYTECODE_V1";
+export const POLICY_VM_TRACE_HASH_DOMAIN = "INTENTRAX_TRACE_V1";
+export const POLICY_VM_EVENT_HASH_DOMAIN = "INTENTRAX_POLICY_VM_EVENT_V1";
+export const POLICY_VM_EVALUATION_HASH_DOMAIN = "INTENTRAX_POLICY_VM_EVALUATION_V1";
+
+const POLICY_BYTECODE_SCHEMA_VERSION = "1.0";
+const POLICY_BYTECODE_VERSION = "1.0";
+const POLICY_COMPILER_VERSION = "C2.3-1.0.0";
+const POLICY_VM_RUNTIME_VERSION = "PVM-1";
+const POLICY_MAX_RULES = 100;
+const POLICY_MAX_CONDITIONS_PER_RULE = 20;
+const POLICY_MAX_INSTRUCTIONS = 10000;
+const POLICY_MAX_CONSTANTS = 1000;
+const POLICY_MAX_STACK_DEPTH = 256;
+const POLICY_VM_MAX_EXECUTION_COST = 10000;
+const POLICY_VM_TASK_IDS = Object.freeze([
+  "C2.4-S1-T1", "C2.4-S1-T2", "C2.4-S1-T3",
+  "C2.4-S2-T1", "C2.4-S2-T2", "C2.4-S2-T3",
+  "C2.4-S3-T1", "C2.4-S3-T2", "C2.4-S3-T3",
+]);
+
+const POLICY_IDENTIFIER_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/;
+const POLICY_VERSION_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+const POLICY_FIELDS = new Set(["policy_id", "policy_version", "rules", "default_effect"]);
+const POLICY_RULE_FIELDS = new Set(["rule_id", "effect", "conditions", "constraints", "priority"]);
+const POLICY_CONDITION_FIELDS = new Set(["field", "operator", "value"]);
+const POLICY_CONSTRAINT_FIELDS = new Set(["constraint_id", "type", "value"]);
+const POLICY_EFFECTS = new Set(["ALLOW", "DENY", "CONDITIONAL"]);
+const POLICY_CONDITION_OPERATORS = new Set(["EQUALS", "NOT_EQUALS", "IN", "NOT_IN", "EXISTS", "GREATER_THAN", "GREATER_THAN_OR_EQUAL", "LESS_THAN", "LESS_THAN_OR_EQUAL"]);
+const POLICY_CONSTRAINT_TYPES = new Set(["MAX_AMOUNT", "MAX_RETRIES", "TIMEOUT_MS", "REQUIRE_APPROVAL", "REQUIRE_GUARDRAIL_PASS", "RESTRICT_TARGET"]);
+const POLICY_FORBIDDEN_TOKENS = Object.freeze(["clock", "command", "dynamic", "eval", "external", "function", "http://", "https://", "latest", "now", "random", "script", "webhook"]);
+const POLICY_COMPARISON_OPCODES = Object.freeze({
+  EQUALS: "CMP_EQ",
+  NOT_EQUALS: "CMP_NEQ",
+  GREATER_THAN: "CMP_GT",
+  GREATER_THAN_OR_EQUAL: "CMP_GTE",
+  LESS_THAN: "CMP_LT",
+  LESS_THAN_OR_EQUAL: "CMP_LTE",
+});
+const POLICY_OPCODE_VALUES = Object.freeze({
+  LOAD_FIELD: 0x01, LOAD_CONST: 0x02, CMP_EQ: 0x03, CMP_NEQ: 0x04, CMP_GT: 0x05, CMP_GTE: 0x06,
+  CMP_LT: 0x07, CMP_LTE: 0x08, AND: 0x09, OR: 0x0a, NOT: 0x0b, JUMP: 0x0c, JUMP_IF_FALSE: 0x0d,
+  RULE_ALLOW: 0x0e, RULE_DENY: 0x0f, RULE_END: 0x10,
+});
+
+class PolicyReevaluationError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = "PolicyReevaluationError";
+    this.code = code;
+  }
+}
+
+// Members of an ordered object are emitted in declaration order (Go
+// canonicaljson.OrderedObject); plain objects are emitted with keys sorted
+// bytewise (Go maps).
+const ORDERED_MEMBERS = Symbol("intentrax.policy.ordered");
+
+function orderedObject(...members) {
+  return { [ORDERED_MEMBERS]: members };
+}
+
+function utf8Compare(left, right) {
+  return Buffer.compare(Buffer.from(left, "utf8"), Buffer.from(right, "utf8"));
+}
+
+// Go encoding/json string encoding: HTML-safe escapes and U+2028/U+2029.
+function goJSONString(value) {
+  if (/[\ud800-\udfff]/.test(value.replace(/[\ud800-\udbff][\udc00-\udfff]/g, ""))) {
+    throw new PolicyReevaluationError("POLICY_ENCODING_UNSUPPORTED", "lone surrogate in a policy string");
+  }
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(new RegExp(String.fromCharCode(0x2028), "g"), "\\u2028")
+    .replace(new RegExp(String.fromCharCode(0x2029), "g"), "\\u2029");
+}
+
+function policyCanonical(value) {
+  if (value === null) return "null";
+  if (typeof value === "string") return goJSONString(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") {
+    if (!Number.isSafeInteger(value)) throw new PolicyReevaluationError("POLICY_ENCODING_UNSUPPORTED", "only safe integers are supported");
+    return String(value);
+  }
+  if (Array.isArray(value)) return "[" + value.map(policyCanonical).join(",") + "]";
+  if (typeof value === "object") {
+    const members = value[ORDERED_MEMBERS];
+    if (members !== undefined) {
+      return "{" + members.map(([key, member]) => goJSONString(key) + ":" + policyCanonical(member)).join(",") + "}";
+    }
+    const keys = Object.keys(value).sort(utf8Compare);
+    return "{" + keys.map((key) => goJSONString(key) + ":" + policyCanonical(value[key])).join(",") + "}";
+  }
+  throw new PolicyReevaluationError("POLICY_ENCODING_UNSUPPORTED", "unsupported value");
+}
+
+function isPlainPolicyObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function policyNonEmpty(value) {
+  return typeof value === "string" && value !== "" && value.trim() === value;
+}
+
+function hasForbiddenPolicyToken(value) {
+  const lower = value.toLowerCase();
+  return POLICY_FORBIDDEN_TOKENS.some((token) => lower.includes(token));
+}
+
+function policyLiteral(value) {
+  if (typeof value === "string") return policyNonEmpty(value) && !hasForbiddenPolicyToken(value) ? { ok: true, value } : { ok: false };
+  if (typeof value === "boolean") return { ok: true, value };
+  if (typeof value === "number") return Number.isSafeInteger(value) ? { ok: true, value } : { ok: false };
+  if (Array.isArray(value)) {
+    if (value.length === 0) return { ok: false };
+    const out = [];
+    for (const item of value) {
+      const literal = policyLiteral(item);
+      if (!literal.ok) return { ok: false };
+      out.push(literal.value);
+    }
+    return { ok: true, value: out };
+  }
+  return { ok: false };
+}
+
+function onlyKnownFields(object, allowed) {
+  return Object.keys(object).every((key) => allowed.has(key));
+}
+
+function invalidPolicy(message) {
+  return new PolicyReevaluationError("POLICY_DOCUMENT_INVALID", message);
+}
+
+// C2.1: validate the policy document and return the normalized definition.
+function validatePolicyDefinition(policy, allowedEventFields) {
+  if (!isPlainPolicyObject(policy)) throw invalidPolicy("policy must be a JSON object");
+  if (!onlyKnownFields(policy, POLICY_FIELDS)) throw invalidPolicy("policy contains unknown top-level fields");
+  if (typeof policy.policy_id !== "string" || !POLICY_IDENTIFIER_RE.test(policy.policy_id)) throw invalidPolicy("policy_id invalid");
+  if (typeof policy.policy_version !== "string" || !POLICY_VERSION_RE.test(policy.policy_version)) throw invalidPolicy("policy_version invalid");
+  if (policy.default_effect !== "DENY") throw invalidPolicy("default_effect must be DENY");
+  const allowedFields = new Set(allowedEventFields);
+  if (!Array.isArray(policy.rules) || policy.rules.length === 0) throw invalidPolicy("rules must be a non-empty array");
+  const seenRuleIDs = new Set();
+  const rules = policy.rules.map((rule, ruleIndex) => {
+    if (!isPlainPolicyObject(rule) || !onlyKnownFields(rule, POLICY_RULE_FIELDS)) throw invalidPolicy(`rules[${ruleIndex}] invalid`);
+    if (typeof rule.rule_id !== "string" || !POLICY_IDENTIFIER_RE.test(rule.rule_id) || seenRuleIDs.has(rule.rule_id)) throw invalidPolicy(`rules[${ruleIndex}].rule_id invalid`);
+    seenRuleIDs.add(rule.rule_id);
+    if (!POLICY_EFFECTS.has(rule.effect)) throw invalidPolicy(`rules[${ruleIndex}].effect invalid`);
+    if (!Number.isSafeInteger(rule.priority)) throw invalidPolicy(`rules[${ruleIndex}].priority invalid`);
+    if (!Array.isArray(rule.conditions)) throw invalidPolicy(`rules[${ruleIndex}].conditions invalid`);
+    const conditions = rule.conditions.map((condition, conditionIndex) => {
+      const at = `rules[${ruleIndex}].conditions[${conditionIndex}]`;
+      if (!isPlainPolicyObject(condition) || !onlyKnownFields(condition, POLICY_CONDITION_FIELDS)) throw invalidPolicy(`${at} invalid`);
+      if (!policyNonEmpty(condition.field) || !allowedFields.has(condition.field)) throw invalidPolicy(`${at}.field invalid`);
+      if (!POLICY_CONDITION_OPERATORS.has(condition.operator)) throw invalidPolicy(`${at}.operator invalid`);
+      const literal = policyLiteral(condition.value);
+      if (!literal.ok) throw invalidPolicy(`${at}.value invalid`);
+      return { field: condition.field, operator: condition.operator, value: literal.value, sourcePath: `policy.rules[${ruleIndex}].conditions[${conditionIndex}]` };
+    });
+    if (!Array.isArray(rule.constraints)) throw invalidPolicy(`rules[${ruleIndex}].constraints invalid`);
+    const seenConstraintIDs = new Set();
+    const constraints = rule.constraints.map((constraint, constraintIndex) => {
+      const at = `rules[${ruleIndex}].constraints[${constraintIndex}]`;
+      if (!isPlainPolicyObject(constraint) || !onlyKnownFields(constraint, POLICY_CONSTRAINT_FIELDS)) throw invalidPolicy(`${at} invalid`);
+      if (typeof constraint.constraint_id !== "string" || !POLICY_IDENTIFIER_RE.test(constraint.constraint_id) || seenConstraintIDs.has(constraint.constraint_id)) throw invalidPolicy(`${at}.constraint_id invalid`);
+      seenConstraintIDs.add(constraint.constraint_id);
+      if (!POLICY_CONSTRAINT_TYPES.has(constraint.type)) throw invalidPolicy(`${at}.type invalid`);
+      const literal = policyLiteral(constraint.value);
+      if (!literal.ok) throw invalidPolicy(`${at}.value invalid`);
+      return { constraint_id: constraint.constraint_id, type: constraint.type, value: literal.value };
+    });
+    if (rule.effect === "CONDITIONAL" && constraints.length === 0) throw invalidPolicy(`rules[${ruleIndex}] CONDITIONAL needs a constraint`);
+    return { rule_id: rule.rule_id, effect: rule.effect, conditions, constraints, priority: rule.priority };
+  });
+  const seenPriorities = new Set();
+  rules.forEach((rule, index) => {
+    if (seenPriorities.has(rule.priority) || (index > 0 && rule.priority > rules[index - 1].priority)) throw invalidPolicy("rule priorities must be unique and descending");
+    seenPriorities.add(rule.priority);
+  });
+  return { policy_id: policy.policy_id, policy_version: policy.policy_version, rules, default_effect: policy.default_effect };
+}
+
+function canonicalPolicyDefinition(definition) {
+  return policyCanonical(orderedObject(
+    ["policy_id", definition.policy_id],
+    ["policy_version", definition.policy_version],
+    ["rules", definition.rules.map((rule) => orderedObject(
+      ["rule_id", rule.rule_id],
+      ["effect", rule.effect],
+      ["conditions", rule.conditions.map((condition) => orderedObject(["field", condition.field], ["operator", condition.operator], ["value", condition.value]))],
+      ["constraints", rule.constraints.map((constraint) => orderedObject(["constraint_id", constraint.constraint_id], ["type", constraint.type], ["value", constraint.value]))],
+      ["priority", rule.priority],
+    ))],
+    ["default_effect", definition.default_effect],
+  ));
+}
+
+function literalConstantType(value) {
+  if (typeof value === "number") return "NUMBER";
+  if (typeof value === "boolean") return "BOOLEAN";
+  if (typeof value === "string") return "STRING";
+  return "STRUCTURED";
+}
+
+function constantTypeRank(type) {
+  return { FIELD: 1, STRING: 2, NUMBER: 3, BOOLEAN: 4 }[type] ?? 5;
+}
+
+function sortedPolicyConditions(conditions) {
+  return [...conditions].sort((left, right) =>
+    utf8Compare(left.field, right.field)
+    || utf8Compare(left.operator, right.operator)
+    || utf8Compare(policyCanonical(left.value), policyCanonical(right.value))
+    || utf8Compare(left.sourcePath, right.sourcePath));
+}
+
+function constraintsPayload(constraints) {
+  return constraints
+    .map((constraint) => ({ constraint_id: constraint.constraint_id, type: constraint.type, value: constraint.value }))
+    .sort((left, right) => utf8Compare(policyCanonical(left), policyCanonical(right)));
+}
+
+function estimatePolicyStackDepth(rules) {
+  let maxDepth = 0;
+  for (const rule of rules) {
+    let depth = 0;
+    rule.conditions.forEach((_, conditionIndex) => {
+      depth += 1;
+      maxDepth = Math.max(maxDepth, depth);
+      depth += 1;
+      maxDepth = Math.max(maxDepth, depth);
+      depth -= 1;
+      if (conditionIndex > 0) depth -= 1;
+    });
+  }
+  return maxDepth;
+}
+
+function compiledPolicyHash(bytecode) {
+  const header = bytecode.bytecode_header_domain;
+  return sha256Hex(POLICY_BYTECODE_HASH_DOMAIN + policyCanonical(orderedObject(
+    ["bytecode_header_domain", orderedObject(
+      ["bytecode_schema_version", header.bytecode_schema_version],
+      ["bytecode_version", header.bytecode_version],
+      ["policy_hash", header.policy_hash],
+      ["compiler_version", header.compiler_version],
+      ["instruction_count", header.instruction_count],
+    )],
+    ["constant_pool", bytecode.constant_pool.map((constant) => orderedObject(
+      ["index", constant.index], ["constant_type", constant.constant_type], ["value", constant.value], ["value_hash", constant.value_hash],
+    ))],
+    ["instruction_stream", bytecode.instruction_stream.map((instruction) => orderedObject(
+      ["index", instruction.index], ["opcode", instruction.opcode], ["opcode_value", instruction.opcode_value],
+      ["operand_a_type", instruction.operand_a_type], ["operand_a", instruction.operand_a],
+      ["operand_b_type", instruction.operand_b_type], ["operand_b", instruction.operand_b],
+    ))],
+  )));
+}
+
+// C2.1 -> C2.3: compile a policy document (its JSON text) to bytecode.
+export function compilePolicyDocument(policyJSON, allowedEventFields) {
+  if (typeof policyJSON !== "string") throw invalidPolicy("policy document must be JSON text");
+  if (!Array.isArray(allowedEventFields) || allowedEventFields.length === 0 || !allowedEventFields.every(policyNonEmpty)) {
+    throw invalidPolicy("allowed event fields are required");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(policyJSON);
+  } catch {
+    throw invalidPolicy("policy document is not JSON");
+  }
+  const definition = validatePolicyDefinition(parsed, allowedEventFields);
+  const sourcePolicyHash = sha256Hex(POLICY_HASH_DOMAIN + canonicalPolicyDefinition(definition));
+  // C2.3 supports ALLOW/DENY with comparison operators only.
+  for (const rule of definition.rules) {
+    if (rule.effect !== "ALLOW" && rule.effect !== "DENY") throw new PolicyReevaluationError("POLICY_COMPILE_FAILED", `rule ${rule.rule_id}: effect not compilable`);
+    for (const condition of rule.conditions) {
+      if (!(condition.operator in POLICY_COMPARISON_OPCODES)) throw new PolicyReevaluationError("POLICY_COMPILE_FAILED", `rule ${rule.rule_id}: operator not compilable`);
+    }
+  }
+  const entries = new Map();
+  const addConstant = (type, value) => {
+    const canonical = policyCanonical(value);
+    const key = type + "\u0000" + canonical;
+    if (!entries.has(key)) entries.set(key, { type, canonical, value, value_hash: sha256Hex(type + "|" + canonical) });
+  };
+  for (const rule of definition.rules) {
+    addConstant("STRING", rule.rule_id);
+    addConstant("STRUCTURED", constraintsPayload(rule.constraints));
+    for (const condition of sortedPolicyConditions(rule.conditions)) {
+      addConstant("FIELD", condition.field);
+      addConstant(literalConstantType(condition.value), condition.value);
+    }
+  }
+  addConstant("STRING", "__default__");
+  addConstant("STRUCTURED", []);
+  if (entries.size > POLICY_MAX_CONSTANTS) throw new PolicyReevaluationError("POLICY_COMPILE_FAILED", "constant pool too large");
+  const constants = [...entries.values()]
+    .sort((left, right) => (constantTypeRank(left.type) - constantTypeRank(right.type)) || utf8Compare(left.canonical, right.canonical) || utf8Compare(left.type, right.type))
+    .map((entry, index) => ({ index, constant_type: entry.type, value: entry.value, value_hash: entry.value_hash, canonical: entry.canonical }));
+  const constantIndex = (type, value) => {
+    const canonical = policyCanonical(value);
+    const found = constants.find((constant) => constant.constant_type === type && constant.canonical === canonical);
+    if (found === undefined) throw new PolicyReevaluationError("POLICY_COMPILE_FAILED", "constant missing");
+    return found.index;
+  };
+  const instructions = [];
+  const add = (opcode, operandAType, operandA, operandBType, operandB) => {
+    instructions.push({ index: instructions.length, opcode, opcode_value: POLICY_OPCODE_VALUES[opcode], operand_a_type: operandAType, operand_a: operandA, operand_b_type: operandBType, operand_b: operandB });
+    return instructions.length - 1;
+  };
+  for (const rule of definition.rules) {
+    sortedPolicyConditions(rule.conditions).forEach((condition, conditionIndex) => {
+      add("LOAD_FIELD", "FIELD_INDEX", constantIndex("FIELD", condition.field), "NONE", 0);
+      add("LOAD_CONST", "CONST_INDEX", constantIndex(literalConstantType(condition.value), condition.value), "NONE", 0);
+      add(POLICY_COMPARISON_OPCODES[condition.operator], "NONE", 0, "NONE", 0);
+      if (conditionIndex > 0) add("AND", "NONE", 0, "NONE", 0);
+    });
+    const jumpIndex = rule.conditions.length > 0 ? add("JUMP_IF_FALSE", "JUMP_OFFSET", 0, "NONE", 0) : -1;
+    const ruleIDIndex = constantIndex("STRING", rule.rule_id);
+    const constraintIndex = constantIndex("STRUCTURED", constraintsPayload(rule.constraints));
+    add(rule.effect === "ALLOW" ? "RULE_ALLOW" : "RULE_DENY", "CONST_INDEX", ruleIDIndex, "CONST_INDEX", constraintIndex);
+    const ruleEndIndex = add("RULE_END", "NONE", 0, "NONE", 0);
+    if (jumpIndex >= 0) instructions[jumpIndex].operand_a = ruleEndIndex - jumpIndex;
+  }
+  add("RULE_DENY", "CONST_INDEX", constantIndex("STRING", "__default__"), "CONST_INDEX", constantIndex("STRUCTURED", []));
+  add("RULE_END", "NONE", 0, "NONE", 0);
+  if (definition.rules.length > POLICY_MAX_RULES
+    || definition.rules.some((rule) => rule.conditions.length > POLICY_MAX_CONDITIONS_PER_RULE)
+    || instructions.length > POLICY_MAX_INSTRUCTIONS
+    || estimatePolicyStackDepth(definition.rules) > POLICY_MAX_STACK_DEPTH) {
+    throw new PolicyReevaluationError("POLICY_COMPILE_FAILED", "policy exceeds compiler safety limits");
+  }
+  const bytecode = {
+    bytecode_header_domain: {
+      bytecode_schema_version: POLICY_BYTECODE_SCHEMA_VERSION,
+      bytecode_version: POLICY_BYTECODE_VERSION,
+      policy_hash: sourcePolicyHash,
+      compiled_policy_hash: "",
+      compiler_version: POLICY_COMPILER_VERSION,
+      instruction_count: instructions.length,
+    },
+    constant_pool: constants.map(({ canonical, ...constant }) => constant),
+    instruction_stream: instructions,
+  };
+  bytecode.bytecode_header_domain.compiled_policy_hash = compiledPolicyHash(bytecode);
+  return {
+    policy_id: definition.policy_id,
+    policy_version: definition.policy_version,
+    source_policy_hash: sourcePolicyHash,
+    compiled_policy_hash: bytecode.bytecode_header_domain.compiled_policy_hash,
+    bytecode,
+  };
+}
+
+function cloneStackValue(value) {
+  return { value_type: value.value_type, value: clonePolicyValue(value.value) };
+}
+
+function clonePolicyValue(value) {
+  if (Array.isArray(value)) return value.map(clonePolicyValue);
+  if (isPlainPolicyObject(value)) return Object.fromEntries(Object.entries(value).map(([key, member]) => [key, clonePolicyValue(member)]));
+  return value;
+}
+
+function stackValueFromEventValue(value) {
+  if (typeof value === "string") return { value_type: "string", value };
+  if (typeof value === "boolean") return { value_type: "boolean", value };
+  if (typeof value === "number" && Number.isSafeInteger(value)) return { value_type: "number", value };
+  return { value_type: "unsupported", value: null };
+}
+
+function resolveEventField(event, field) {
+  let current = event;
+  for (const part of field.split(".")) {
+    if (!isPlainPolicyObject(current) || !Object.hasOwn(current, part)) return { value_type: "NULL_VALUE", value: null };
+    current = current[part];
+  }
+  if (current === null) return { value_type: "NULL_LITERAL", value: null };
+  return stackValueFromEventValue(current);
+}
+
+function stackValueFromConstant(constant) {
+  switch (constant.constant_type) {
+    case "STRING": return typeof constant.value === "string" ? { value_type: "string", value: constant.value } : null;
+    case "NUMBER": return Number.isSafeInteger(constant.value) ? { value_type: "number", value: constant.value } : null;
+    case "BOOLEAN": return typeof constant.value === "boolean" ? { value_type: "boolean", value: constant.value } : null;
+    default: return null;
+  }
+}
+
+function isNullStackValue(value) {
+  return value.value_type === "NULL_VALUE" || value.value_type === "NULL_LITERAL";
+}
+
+function compareStackValues(left, right, opcode) {
+  if (isNullStackValue(left) || isNullStackValue(right)) {
+    if (opcode === "CMP_EQ") return { value: left.value_type === right.value_type };
+    if (opcode === "CMP_NEQ") return { value: left.value_type !== right.value_type };
+    return { error: "ERR_TYPE_MISMATCH" };
+  }
+  if (left.value_type !== right.value_type) return { error: "ERR_TYPE_MISMATCH" };
+  if (left.value_type === "string" || left.value_type === "boolean") {
+    if (opcode === "CMP_EQ") return { value: left.value === right.value };
+    if (opcode === "CMP_NEQ") return { value: left.value !== right.value };
+    return { error: "ERR_TYPE_MISMATCH" };
+  }
+  if (left.value_type === "number") {
+    switch (opcode) {
+      case "CMP_EQ": return { value: left.value === right.value };
+      case "CMP_NEQ": return { value: left.value !== right.value };
+      case "CMP_GT": return { value: left.value > right.value };
+      case "CMP_GTE": return { value: left.value >= right.value };
+      case "CMP_LT": return { value: left.value < right.value };
+      case "CMP_LTE": return { value: left.value <= right.value };
+      default: return { error: "ERR_INVALID_INSTRUCTION" };
+    }
+  }
+  return { error: "ERR_TYPE_MISMATCH" };
+}
+
+function policyInstructionCost(opcode) {
+  if (opcode === "LOAD_FIELD") return 3;
+  if (opcode.startsWith("CMP_")) return 2;
+  return 1;
+}
+
+function policyRuntimeError(errorCode) {
+  return { decision: "ERROR", rule_id: "", constraints: [], error_code: errorCode };
+}
+
+// C2.4: run the bytecode over the event; returns the evaluation result and
+// the VM trace exactly as the Go VM records them.
+function executePolicyBytecode(bytecode, event) {
+  const instructions = bytecode.instruction_stream;
+  const constants = bytecode.constant_pool;
+  const stack = [];
+  const trace = [];
+  let ip = 0;
+  let step = 0;
+  let cost = 0;
+  const constantAt = (index, type) => {
+    const constant = Number.isInteger(index) && index >= 0 && index < constants.length ? constants[index] : undefined;
+    if (constant === undefined || (type !== "" && constant.constant_type !== type)) return undefined;
+    return constant;
+  };
+  const push = (value) => {
+    if (stack.length + 1 > POLICY_MAX_STACK_DEPTH) return "ERR_STACK_OVERFLOW";
+    stack.push(value);
+    return "";
+  };
+  const pop = () => (stack.length === 0 ? { error: "ERR_STACK_UNDERFLOW" } : { value: stack.pop() });
+  const popBool = () => {
+    const popped = pop();
+    if (popped.error) return popped;
+    if (popped.value.value_type !== "boolean" || typeof popped.value.value !== "boolean") return { error: "ERR_TYPE_MISMATCH" };
+    return { value: popped.value.value };
+  };
+  const apply = (instruction) => {
+    const next = ip + 1;
+    switch (instruction.opcode) {
+      case "LOAD_FIELD": {
+        const constant = constantAt(instruction.operand_a, "FIELD");
+        if (constant === undefined || typeof constant.value !== "string" || constant.value === "") return { next, error: "ERR_INVALID_CONSTANT" };
+        return { next, error: push(resolveEventField(event, constant.value)) };
+      }
+      case "LOAD_CONST": {
+        const constant = constantAt(instruction.operand_a, "");
+        if (constant === undefined || constant.constant_type === "FIELD" || constant.constant_type === "STRUCTURED") return { next, error: "ERR_INVALID_CONSTANT" };
+        const value = stackValueFromConstant(constant);
+        if (value === null) return { next, error: "ERR_INVALID_CONSTANT" };
+        return { next, error: push(value) };
+      }
+      case "CMP_EQ": case "CMP_NEQ": case "CMP_GT": case "CMP_GTE": case "CMP_LT": case "CMP_LTE": {
+        const right = pop();
+        if (right.error) return { next, error: right.error };
+        const left = pop();
+        if (left.error) return { next, error: left.error };
+        const compared = compareStackValues(left.value, right.value, instruction.opcode);
+        if (compared.error) return { next, error: compared.error };
+        return { next, error: push({ value_type: "boolean", value: compared.value }) };
+      }
+      case "AND": case "OR": {
+        const right = popBool();
+        if (right.error) return { next, error: right.error };
+        const left = popBool();
+        if (left.error) return { next, error: left.error };
+        const value = instruction.opcode === "AND" ? left.value && right.value : left.value || right.value;
+        return { next, error: push({ value_type: "boolean", value }) };
+      }
+      case "NOT": {
+        const value = popBool();
+        if (value.error) return { next, error: value.error };
+        return { next, error: push({ value_type: "boolean", value: !value.value }) };
+      }
+      case "JUMP": {
+        const target = ip + instruction.operand_a;
+        if (target < 0 || target >= instructions.length) return { next, error: "ERR_INVALID_JUMP" };
+        return { next: target, error: "" };
+      }
+      case "JUMP_IF_FALSE": {
+        const condition = popBool();
+        if (condition.error) return { next, error: condition.error };
+        if (condition.value) return { next, error: "" };
+        const target = ip + instruction.operand_a;
+        if (target < 0 || target >= instructions.length) return { next, error: "ERR_INVALID_JUMP" };
+        return { next: target, error: "" };
+      }
+      case "RULE_ALLOW": case "RULE_DENY": {
+        const ruleConstant = constantAt(instruction.operand_a, "STRING");
+        if (ruleConstant === undefined || typeof ruleConstant.value !== "string" || ruleConstant.value === "") return { next, error: "ERR_INVALID_CONSTANT" };
+        const constraintConstant = constantAt(instruction.operand_b, "STRUCTURED");
+        if (constraintConstant === undefined || !Array.isArray(constraintConstant.value)) return { next, error: "ERR_INVALID_CONSTANT" };
+        return {
+          next,
+          error: "",
+          result: {
+            decision: instruction.opcode === "RULE_DENY" ? "NON_COMPLIANT" : "COMPLIANT",
+            rule_id: ruleConstant.value,
+            constraints: clonePolicyValue(constraintConstant.value),
+            error_code: "",
+          },
+        };
+      }
+      case "RULE_END":
+        return { next, error: "" };
+      default:
+        return { next, error: "ERR_INVALID_INSTRUCTION" };
+    }
+  };
+  while (ip >= 0 && ip < instructions.length) {
+    const instruction = instructions[ip];
+    if (step >= POLICY_MAX_INSTRUCTIONS || cost + policyInstructionCost(instruction.opcode) > POLICY_VM_MAX_EXECUTION_COST) return { result: policyRuntimeError("ERR_RUNTIME_LIMIT_EXCEEDED"), trace };
+    if (trace.length + 1 > POLICY_MAX_INSTRUCTIONS) return { result: policyRuntimeError("ERR_RUNTIME_LIMIT_EXCEEDED"), trace };
+    const before = stack.map(cloneStackValue);
+    const applied = apply(instruction);
+    const after = stack.map(cloneStackValue);
+    step += 1;
+    cost += policyInstructionCost(instruction.opcode);
+    trace.push({ step, instruction_index: instruction.index, opcode: instruction.opcode, stack_before: before, stack_after: after });
+    if (applied.error) return { result: policyRuntimeError(applied.error), trace };
+    if (applied.result) return { result: applied.result, trace };
+    ip = applied.next;
+  }
+  return { result: policyRuntimeError("ERR_NO_TERMINAL_RULE"), trace };
+}
+
+function orderedPolicyTrace(trace) {
+  const stackOrdered = (stack) => stack.map((value) => orderedObject(["value_type", value.value_type], ["value", value.value]));
+  return trace.map((entry) => orderedObject(
+    ["step", entry.step],
+    ["instruction_index", entry.instruction_index],
+    ["opcode", entry.opcode],
+    ["stack_before", stackOrdered(entry.stack_before)],
+    ["stack_after", stackOrdered(entry.stack_after)],
+  ));
+}
+
+// The C2.4 execution-event hash of an event object.
+export function policyExecutionEventHash(event) {
+  return sha256Hex(POLICY_VM_EVENT_HASH_DOMAIN + policyCanonical(event));
+}
+
+// C2.4: evaluate a compiled policy over an execution event and return every
+// value a policy binding seals.
+export function evaluateCompiledPolicy(compiled, event) {
+  if (!isPlainPolicyObject(event) || Object.keys(event).length === 0) throw new PolicyReevaluationError("POLICY_EVENT_INVALID", "execution event must be a non-empty object");
+  const header = compiled.bytecode.bytecode_header_domain;
+  const { result, trace } = executePolicyBytecode(compiled.bytecode, event);
+  const vmTrace = orderedPolicyTrace(trace);
+  const traceHash = sha256Hex(POLICY_VM_TRACE_HASH_DOMAIN + policyCanonical(vmTrace));
+  const executionEventHash = policyExecutionEventHash(event);
+  const evaluationHash = sha256Hex(POLICY_VM_EVALUATION_HASH_DOMAIN + policyCanonical(orderedObject(
+    ["evaluation_result", orderedObject(["decision", result.decision], ["rule_id", result.rule_id], ["constraints", result.constraints], ["error_code", result.error_code])],
+    ["vm_trace", vmTrace],
+    ["trace_hash", traceHash],
+    ["runtime_fingerprint", orderedObject(["pvm_runtime_version", POLICY_VM_RUNTIME_VERSION], ["compiler_version", header.compiler_version], ["bytecode_version", header.bytecode_version])],
+    ["integrity", orderedObject(
+      ["source_policy_hash", header.policy_hash],
+      ["compiled_policy_hash", header.compiled_policy_hash],
+      ["execution_event_hash", executionEventHash],
+      ["trace_hash", traceHash],
+      ["hash_algorithm", "SHA-256"],
+    )],
+    ["task_ids", [...POLICY_VM_TASK_IDS]],
+    ["valid", true],
+  )));
+  const constraints = result.constraints.map((constraint) => {
+    if (!isPlainPolicyObject(constraint) || !policyNonEmpty(constraint.constraint_id) || !policyNonEmpty(constraint.type)) {
+      throw new PolicyReevaluationError("POLICY_EVALUATION_INVALID", "evaluation constraint has no id or type");
+    }
+    return { constraint_id: constraint.constraint_id, type: constraint.type };
+  }).sort((left, right) => utf8Compare(left.constraint_id, right.constraint_id));
+  return {
+    policy_id: compiled.policy_id,
+    policy_version: compiled.policy_version,
+    source_policy_hash: header.policy_hash,
+    compiled_policy_hash: header.compiled_policy_hash,
+    execution_event_hash: executionEventHash,
+    evaluation_hash: evaluationHash,
+    decision: result.decision,
+    rule_id: result.rule_id,
+    error_code: result.error_code,
+    constraints,
+  };
+}
+
+// Compiles policyJSON and evaluates event in one step.
+export function reevaluatePolicy({ policyJSON, allowedEventFields, event }) {
+  return evaluateCompiledPolicy(compilePolicyDocument(policyJSON, allowedEventFields), event);
+}
+
+// Lists every sealed policy-binding member the recomputed evaluation
+// disagrees with (sorted policy_binding.<member> paths). Constraint statuses
+// are not part of the evaluation and are not compared.
+export function policyReevaluationMismatches(binding, recomputed) {
+  const fields = [];
+  for (const member of ["compiled_policy_hash", "decision", "evaluation_hash", "execution_event_hash", "policy_id", "policy_version", "rule_id", "source_policy_hash"]) {
+    if (binding[member] !== recomputed[member]) fields.push(`policy_binding.${member}`);
+  }
+  const sealed = Array.isArray(binding.constraints) ? binding.constraints : [];
+  if (sealed.length !== recomputed.constraints.length
+    || sealed.some((constraint, index) => constraint.constraint_id !== recomputed.constraints[index].constraint_id || constraint.type !== recomputed.constraints[index].type)) {
+    fields.push("policy_binding.constraints");
+  }
+  return fields.sort();
 }

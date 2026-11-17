@@ -393,7 +393,8 @@ export type AssuranceLimitationCode =
   | "SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS"
   | "POLICY_EVALUATION_NOT_RECHECKABLE"
   | "POLICY_DECISION_NOT_ENFORCED"
-  | "POLICY_CONSTRAINT_NOT_EVALUATED";
+  | "POLICY_CONSTRAINT_NOT_EVALUATED"
+  | "POLICY_EVENT_SELF_REPORTED";
 export interface DimensionAssessment {
   readonly dimension: AssuranceDimension;
   readonly result: AssessmentResult;
@@ -425,5 +426,48 @@ export interface SealedPolicyBindingSummary {
   readonly decision: string;
   readonly constraints?: readonly { readonly constraint_id: string; readonly status: string }[];
 }
-export declare function authorizationAssessment(policyBinding: SealedPolicyBindingSummary | null | undefined): { result: AssessmentResult; reasons: string[]; limitations: AssuranceLimitationCode[] };
-export declare function buildLegacyVerificationAssessment(input: { readonly signerTrust: string; readonly keySetSupplied: boolean; readonly policyBinding?: SealedPolicyBindingSummary | null }): VerificationAssessment;
+export declare function authorizationAssessment(policyBinding: SealedPolicyBindingSummary | null | undefined, policyReevaluation?: PolicyReevaluationOutcome | null): { result: AssessmentResult; provenance: "INTENTRAX_DECISION" | "VERIFIER_COMPUTED"; reasons: string[]; limitations: AssuranceLimitationCode[] };
+export declare function buildLegacyVerificationAssessment(input: { readonly signerTrust: string; readonly keySetSupplied: boolean; readonly policyBinding?: SealedPolicyBindingSummary | null; readonly policyReevaluation?: PolicyReevaluationOutcome | null }): VerificationAssessment;
+
+/** Outcome of re-running a sealed policy evaluation (verify-proof `policy_reevaluation`). */
+export interface PolicyReevaluationOutcome {
+  readonly status: "MATCH" | "NOT_RECHECKED";
+  readonly reason?: "EVENT_NOT_RECONSTRUCTIBLE" | "POLICY_SOURCE_UNAVAILABLE";
+  readonly policy_source?: "PUBLISHED_REGISTRY" | "SUPPLIED_DOCUMENT";
+}
+
+/** Every value a policy binding seals, recomputed by the TS port of the policy engine. */
+export interface PolicyReevaluationResult {
+  readonly policy_id: string;
+  readonly policy_version: string;
+  readonly source_policy_hash: string;
+  readonly compiled_policy_hash: string;
+  readonly execution_event_hash: string;
+  readonly evaluation_hash: string;
+  readonly decision: "COMPLIANT" | "NON_COMPLIANT" | "ERROR";
+  readonly rule_id: string;
+  readonly error_code: string;
+  readonly constraints: readonly { readonly constraint_id: string; readonly type: string }[];
+}
+
+export interface CompiledPolicyDocument {
+  readonly policy_id: string;
+  readonly policy_version: string;
+  readonly source_policy_hash: string;
+  readonly compiled_policy_hash: string;
+  readonly bytecode: unknown;
+}
+
+export declare const POLICY_HASH_DOMAIN: "INTENTRAX_POLICY_V1";
+export declare const POLICY_BYTECODE_HASH_DOMAIN: "INTENTRAX_BYTECODE_V1";
+export declare const POLICY_VM_TRACE_HASH_DOMAIN: "INTENTRAX_TRACE_V1";
+export declare const POLICY_VM_EVENT_HASH_DOMAIN: "INTENTRAX_POLICY_VM_EVENT_V1";
+export declare const POLICY_VM_EVALUATION_HASH_DOMAIN: "INTENTRAX_POLICY_VM_EVALUATION_V1";
+/** C2.1 -> C2.3: compile a policy document (JSON text). Throws a PolicyReevaluationError on an invalid document. */
+export declare function compilePolicyDocument(policyJSON: string, allowedEventFields: readonly string[]): CompiledPolicyDocument;
+/** C2.4: evaluate a compiled policy over an execution event. */
+export declare function evaluateCompiledPolicy(compiled: CompiledPolicyDocument, event: Record<string, unknown>): PolicyReevaluationResult;
+export declare function reevaluatePolicy(input: { readonly policyJSON: string; readonly allowedEventFields: readonly string[]; readonly event: Record<string, unknown> }): PolicyReevaluationResult;
+export declare function policyExecutionEventHash(event: Record<string, unknown>): string;
+/** Sorted policy_binding.<member> paths the recomputed evaluation disagrees with; empty means it matches. */
+export declare function policyReevaluationMismatches(binding: Pick<PolicyReevaluationResult, "policy_id" | "policy_version" | "source_policy_hash" | "compiled_policy_hash" | "execution_event_hash" | "evaluation_hash" | "decision" | "rule_id" | "constraints">, recomputed: PolicyReevaluationResult): string[];

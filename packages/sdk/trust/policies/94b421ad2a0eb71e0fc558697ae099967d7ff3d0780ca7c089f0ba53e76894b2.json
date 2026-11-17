@@ -1,0 +1,57 @@
+{
+  "policy_id": "intentrax.runtime.baseline",
+  "policy_version": "1.0.0",
+  "rules": [
+    {
+      "rule_id": "rule.deny-mutating-dry-run",
+      "effect": "DENY",
+      "conditions": [
+        {
+          "field": "eeo.execution_domain.lane",
+          "operator": "EQUALS",
+          "value": "DRY_RUN"
+        },
+        {
+          "field": "eeo.execution_domain.mutation_performed",
+          "operator": "EQUALS",
+          "value": true
+        }
+      ],
+      "constraints": [],
+      "priority": 30
+    },
+    {
+      "rule_id": "rule.allow-dry-run",
+      "effect": "ALLOW",
+      "conditions": [
+        {
+          "field": "eeo.execution_domain.lane",
+          "operator": "EQUALS",
+          "value": "DRY_RUN"
+        }
+      ],
+      "constraints": [],
+      "priority": 20
+    },
+    {
+      "rule_id": "rule.allow-review-gated-execute",
+      "effect": "ALLOW",
+      "conditions": [
+        {
+          "field": "eeo.execution_domain.lane",
+          "operator": "EQUALS",
+          "value": "LIVE_EXECUTE"
+        }
+      ],
+      "constraints": [
+        {
+          "constraint_id": "constraint.operator-review",
+          "type": "REQUIRE_APPROVAL",
+          "value": true
+        }
+      ],
+      "priority": 10
+    }
+  ],
+  "default_effect": "DENY"
+}

@@ -3,9 +3,9 @@ import { createHash, createPublicKey, verify as verifySignatureBytes } from "nod
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { buildAgentGatewayAdmissionEnvelope, buildLegacyVerificationAssessment } from "../index.js";
+import { buildAgentGatewayAdmissionEnvelope, buildLegacyVerificationAssessment, compilePolicyDocument, evaluateCompiledPolicy, policyReevaluationMismatches } from "../index.js";
 
-const VERSION = "1.5.0";
+const VERSION = "1.6.0";
 const ADMISSION_SCHEMA_VERSION = "intentrax.runtime.agent_admission_request/1.0";
 const INIT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_init/1.0";
 const ACTION_RECEIPT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_action_receipt/1.0";
@@ -34,6 +34,11 @@ const BUILT_IN_KEY_SET_URLS = Object.freeze([
   // Published sandbox keys (not trust-bearing).
   new URL("../trust/sandbox-key-set.json", import.meta.url),
 ]);
+// The published policy registry bundled with the SDK: byte-identical copies of
+// engine/internal/policyengine/published/policies/<source_policy_hash>.json,
+// the documents GET /v1/policies/{source_policy_hash} serves. Used to re-run a
+// sealed policy evaluation offline.
+const BUILT_IN_POLICY_REGISTRY_URL = new URL("../trust/policies/", import.meta.url);
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 const SIGNER_TRUST_EXIT_CODE = 3;
 const LOCAL_PDF_RECEIPT_VERIFICATION_SCHEMA_VERSION = "intentrax.sdk.local_pdf_receipt_verification_report/1.0";
@@ -1071,6 +1076,7 @@ function parseVerifyProofOptions(args) {
     json: false,
     reportOut: ".intentrax/offline-proof-verification.report.json",
     trustedKeys: [],
+    policyDocuments: [],
   };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -1080,6 +1086,8 @@ function parseVerifyProofOptions(args) {
       options.reportOut = requireValue(args, ++index, arg);
     } else if (arg === "--trusted-keys") {
       options.trustedKeys.push(requireValue(args, ++index, arg));
+    } else if (arg === "--policy-document") {
+      options.policyDocuments.push(requireValue(args, ++index, arg));
     } else {
       fail(`unknown option: ${arg}`);
     }
@@ -1119,7 +1127,8 @@ function verifyProofExportCommand(proofExportPath, options) {
   }
   const proofExport = parseSingleJSON(source, "proof export");
   const keySets = loadPublishedKeySets(options.trustedKeys);
-  const report = buildLocalProofVerificationReport(proofExport, resolvedProofExportPath, resolve(options.reportOut), keySets);
+  const policyDocuments = options.policyDocuments.map((path) => readFileSync(resolve(path), "utf8"));
+  const report = buildLocalProofVerificationReport(proofExport, resolvedProofExportPath, resolve(options.reportOut), keySets, policyDocuments);
   const reportData = JSON.stringify(report, null, 2) + "\n";
   mkdirSync(dirname(resolve(options.reportOut)), { recursive: true });
   writeFileSync(resolve(options.reportOut), reportData, { mode: 0o600 });
@@ -1187,7 +1196,7 @@ function buildLocalPDFReceiptVerificationReport(bytes, pdfPath, reportPath, expe
   });
 }
 
-function buildLocalProofVerificationReport(proofExport, proofExportPath, reportPath, keySets) {
+function buildLocalProofVerificationReport(proofExport, proofExportPath, reportPath, keySets, policyDocuments = []) {
   const invalid = validateProofLookupExport(proofExport);
   if (invalid.length > 0) {
     fail(`proof export verification failed closed: ${invalid.join(",")}`);
@@ -1205,6 +1214,8 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
   if (policyBinding.invalid.length > 0) {
     fail(`proof export verification failed closed: ${policyBinding.invalid.join(",")}`);
   }
+  // Re-run the sealed evaluation (P1-C step 2); a disagreement fails closed.
+  const policyReevaluation = reevaluateSealedPolicyBinding(record.canonical_aep_json, policyBinding.binding, policyDocuments);
   const trust = classifySignerTrust(signatures.signers, keySets);
   const withoutHash = {
     schema_version: LOCAL_PROOF_VERIFICATION_SCHEMA_VERSION,
@@ -1244,7 +1255,14 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
     // is spelled out, so an unchecked approval reads NOT CHECKED.
     ...(policyBinding.binding === null
       ? {}
-      : { policy_binding: policyBinding.binding, policy_binding_statement: policyBindingStatement(policyBinding.binding) }),
+      : {
+        policy_binding: policyBinding.binding,
+        policy_binding_statement: policyBindingStatement(policyBinding.binding),
+        // MATCH when the sealed evaluation was re-run and came out identical;
+        // NOT_RECHECKED (with a reason) when it could not be re-run. Never
+        // silently passes: a re-run that disagrees fails verification.
+        policy_reevaluation: policyReevaluation,
+      }),
     hash_algorithm: "SHA-256",
     boundary_assertions: {
       offline_verifier_used: true,
@@ -1267,13 +1285,92 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
     // profile, per-dimension results, verdict by the fixed rule,
     // machine-readable limitations). status, signer_trust and the exit code
     // are unchanged. Covered by report_hash.
-    verification_assessment: buildLegacyVerificationAssessment({ signerTrust: trust.signer_trust, keySetSupplied: keySets.length > 0, policyBinding: policyBinding.binding }),
+    verification_assessment: buildLegacyVerificationAssessment({ signerTrust: trust.signer_trust, keySetSupplied: keySets.length > 0, policyBinding: policyBinding.binding, policyReevaluation }),
     report_hash: "",
   };
   return Object.freeze({
     ...withoutHash,
     report_hash: sha256Hex(LOCAL_PROOF_VERIFY_DOMAIN + canonicalJson(withoutHash)),
   });
+}
+
+// Policy re-evaluation (P1-C step 2). Mirrors the Go offline verifier
+// (engine/internal/verificationinfra/offlineproof/policy_reevaluation.go):
+// rebuild the evaluated event from the signed AEP, resolve the policy document
+// by its source policy hash (a --policy-document first, then the bundled
+// published registry), re-run it with the TS port of the policy engine and
+// require every sealed value to come out identical.
+// The runtime lane the signed AEP itself names (execution_id prefix and
+// policy.policy_id together), or "" when it names none.
+function signedRuntimeLane(canonicalAEPJSON) {
+  let aep;
+  try {
+    aep = JSON.parse(canonicalAEPJSON);
+  } catch {
+    return "";
+  }
+  const executionID = isRecord(aep) && typeof aep.execution_id === "string" ? aep.execution_id : "";
+  const policyID = isRecord(aep) && isRecord(aep.policy) && typeof aep.policy.policy_id === "string" ? aep.policy.policy_id : "";
+  const marker = RUNTIME_LANE_MARKERS.find((entry) => executionID.startsWith(entry.executionIDPrefix) && policyID === entry.policyID);
+  return marker === undefined ? "" : marker.lane;
+}
+
+// Rebuilds the evaluated event from policy_binding.evaluated_facts, or null
+// for a binding sealed before step 2. The sealed lane must be the lane the
+// signed AEP itself names; otherwise verification fails closed.
+function reconstructPolicyEvent(canonicalAEPJSON, binding) {
+  const facts = binding.evaluated_facts;
+  if (facts === undefined) return null;
+  const lane = signedRuntimeLane(canonicalAEPJSON);
+  if (lane !== facts.lane) {
+    fail(`proof export verification failed closed: policy re-evaluation: policy_binding.evaluated_facts.lane "${facts.lane}" does not match the signed proof's lane "${lane}"`);
+  }
+  return {
+    event: { eeo: { execution_domain: { lane: facts.lane, mutation_performed: facts.mutation_performed } } },
+    allowedEventFields: [...RUNTIME_POLICY_EVENT_FIELDS],
+  };
+}
+
+function resolvePolicyDocument(sourcePolicyHash, allowedEventFields, policyDocuments) {
+  const compile = (document) => {
+    try {
+      const compiled = compilePolicyDocument(document, allowedEventFields);
+      return compiled.source_policy_hash === sourcePolicyHash ? compiled : null;
+    } catch {
+      return null;
+    }
+  };
+  for (const document of policyDocuments) {
+    const compiled = compile(document);
+    if (compiled !== null) return { compiled, source: "SUPPLIED_DOCUMENT" };
+  }
+  if (/^[a-f0-9]{64}$/.test(sourcePolicyHash)) {
+    const url = new URL(`${sourcePolicyHash}.json`, BUILT_IN_POLICY_REGISTRY_URL);
+    if (existsSync(url)) {
+      const compiled = compile(readFileSync(url, "utf8"));
+      if (compiled !== null) return { compiled, source: "PUBLISHED_REGISTRY" };
+    }
+  }
+  return null;
+}
+
+function reevaluateSealedPolicyBinding(canonicalAEPJSON, binding, policyDocuments) {
+  if (binding === null) return null;
+  const event = reconstructPolicyEvent(canonicalAEPJSON, binding);
+  if (event === null) return { status: "NOT_RECHECKED", reason: "EVENT_NOT_RECONSTRUCTIBLE" };
+  const resolved = resolvePolicyDocument(binding.source_policy_hash, event.allowedEventFields, policyDocuments);
+  if (resolved === null) return { status: "NOT_RECHECKED", reason: "POLICY_SOURCE_UNAVAILABLE" };
+  let recomputed;
+  try {
+    recomputed = evaluateCompiledPolicy(resolved.compiled, event.event);
+  } catch (error) {
+    fail(`proof export verification failed closed: policy re-evaluation failed: ${error.message}`);
+  }
+  const mismatches = policyReevaluationMismatches(binding, recomputed);
+  if (mismatches.length > 0) {
+    fail(`proof export verification failed closed: policy re-evaluation mismatch: ${mismatches.join(",")}`);
+  }
+  return { status: "MATCH", policy_source: resolved.source };
 }
 
 // AEP 1.1 policy-binding profile (aep.policy_binding): the RECORD_ONLY
@@ -1287,6 +1384,16 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
 // ascending); anything else fails closed. It never means the decision was
 // enforced.
 const POLICY_BINDING_PROFILE = "intentrax.aep.policy_binding/1.1";
+const POLICY_BINDING_OPTIONAL_MEMBERS = Object.freeze(["evaluated_facts", "mandate_hash"]);
+const POLICY_EVALUATED_LANES = new Set(["DRY_RUN", "LIVE_EXECUTE"]);
+// The runtime execution-event profile (engine recheck.RuntimeEventFields /
+// RuntimeExecutionEvent) and the lane markers the signed AEP itself carries
+// (engine proofproduction DryRunLane / LiveExecuteLane).
+const RUNTIME_POLICY_EVENT_FIELDS = Object.freeze(["eeo.execution_domain.lane", "eeo.execution_domain.mutation_performed"]);
+const RUNTIME_LANE_MARKERS = Object.freeze([
+  Object.freeze({ lane: "DRY_RUN", executionIDPrefix: "runtime-dry-run-", policyID: "intentrax.runtime.private_alpha.dry_run" }),
+  Object.freeze({ lane: "LIVE_EXECUTE", executionIDPrefix: "runtime-execute-", policyID: "intentrax.runtime.private_alpha.live_execute" }),
+]);
 const POLICY_BINDING_REQUIRED_MEMBERS = Object.freeze([
   "binding_profile", "compiled_policy_hash", "constraints", "decision", "enforcement", "evaluation_hash",
   "execution_event_hash", "hash_algorithm", "policy_id", "policy_version", "rule_id", "source_policy_hash",
@@ -1312,17 +1419,28 @@ function sealedPolicyBinding(canonicalAEPJSON) {
   const binding = aep.policy_binding;
   if (!isRecord(binding)) return { binding: null, invalid: ["policy_binding"] };
   const members = Object.keys(binding).sort();
-  const expected = Object.hasOwn(binding, "mandate_hash")
-    ? [...POLICY_BINDING_REQUIRED_MEMBERS, "mandate_hash"].sort()
-    : [...POLICY_BINDING_REQUIRED_MEMBERS];
+  const expected = [...POLICY_BINDING_REQUIRED_MEMBERS, ...POLICY_BINDING_OPTIONAL_MEMBERS.filter((member) => Object.hasOwn(binding, member))].sort();
   if (members.length !== expected.length || members.some((member, index) => member !== expected[index])) {
     return { binding: null, invalid: ["policy_binding.members"] };
   }
   const invalid = [];
   for (const member of members) {
-    if (member !== "constraints" && typeof binding[member] !== "string") invalid.push(`policy_binding.${member}`);
+    if (member !== "constraints" && member !== "evaluated_facts" && typeof binding[member] !== "string") invalid.push(`policy_binding.${member}`);
   }
   if (invalid.length > 0) return { binding: null, invalid };
+  // evaluated_facts (P1-C step 2): exactly a string lane and a boolean
+  // mutation_performed. Optional: bindings sealed before step 2 omit it.
+  let evaluatedFacts;
+  if (Object.hasOwn(binding, "evaluated_facts")) {
+    const facts = binding.evaluated_facts;
+    const factMembers = isRecord(facts) ? Object.keys(facts).sort() : [];
+    if (!isRecord(facts) || factMembers.length !== 2 || factMembers[0] !== "lane" || factMembers[1] !== "mutation_performed"
+      || typeof facts.lane !== "string" || typeof facts.mutation_performed !== "boolean") {
+      return { binding: null, invalid: ["policy_binding.evaluated_facts"] };
+    }
+    if (!POLICY_EVALUATED_LANES.has(facts.lane)) invalid.push("policy_binding.evaluated_facts.lane");
+    evaluatedFacts = Object.freeze({ lane: facts.lane, mutation_performed: facts.mutation_performed });
+  }
   const constraints = sealedPolicyConstraints(binding.constraints);
   if (constraints.malformed.length > 0) return { binding: null, invalid: constraints.malformed };
   invalid.push(...constraints.invalid);
@@ -1339,7 +1457,7 @@ function sealedPolicyBinding(canonicalAEPJSON) {
   }
   if (invalid.length > 0) return { binding: null, invalid: invalid.sort() };
   const normalized = {};
-  for (const member of members) normalized[member] = member === "constraints" ? constraints.list : binding[member];
+  for (const member of members) normalized[member] = member === "constraints" ? constraints.list : member === "evaluated_facts" ? evaluatedFacts : binding[member];
   return { binding: Object.freeze(normalized), invalid: [] };
 }
 
@@ -2871,7 +2989,7 @@ function printHelp() {
 Usage:
   intentrax init <adapter> [--dry-run] [--force] [--json] [--output-dir <dir>] [--base-url <url>] [--tenant-id <tenant>]
   intentrax check-init --output-dir <dir> [--json]
-  intentrax verify-proof <proof-export.json> [--trusted-keys <key-set.json>] [--json] [--report-out <file>]
+  intentrax verify-proof <proof-export.json> [--trusted-keys <key-set.json>] [--policy-document <policy.json>] [--json] [--report-out <file>]
   intentrax verify-pdf-receipt <receipt.pdf> --pdf-hash <X-Intentrax-PDF-Hash> [--json] [--report-out <file>]
 
 Adapters:
@@ -2909,6 +3027,14 @@ Proof export verification:
                                   requires (signatures may have been stripped)
     REVOKED_SIGNER / MIXED_TRUST 3
     any integrity or signature failure exits 2 (failed closed)
+
+  A proof that seals a policy binding (AEP 1.1) also gets policy_reevaluation:
+  verify-proof rebuilds the evaluated event from the signed proof, resolves the
+  policy by its source_policy_hash (--policy-document, as served by
+  GET /v1/policies/{source_policy_hash}, or the published registry bundled in
+  trust/policies), re-runs the policy engine and requires every sealed value
+  to come out identical. MATCH or NOT_RECHECKED (with a reason); a re-run that
+  disagrees fails closed (exit 2).
 
   The report also carries verification_assessment, printed as a table: the
   assurance profile (every proof issued today is LEGACY_DECISION_RECORD,
