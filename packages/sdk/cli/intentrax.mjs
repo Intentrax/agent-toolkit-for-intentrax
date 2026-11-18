@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildAgentGatewayAdmissionEnvelope, buildLegacyVerificationAssessment, compilePolicyDocument, evaluateCompiledPolicy, policyReevaluationMismatches } from "../index.js";
 
-const VERSION = "1.6.0";
+const VERSION = "1.7.0";
 const ADMISSION_SCHEMA_VERSION = "intentrax.runtime.agent_admission_request/1.0";
 const INIT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_init/1.0";
 const ACTION_RECEIPT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_action_receipt/1.0";
@@ -249,6 +249,12 @@ async function main(argv) {
     console.log(VERSION);
     return 0;
   }
+  if (command === "sandbox") {
+    // Local assurance sandbox: ephemeral local keys, no network, verdict capped at
+    // LOCAL_NON_TRUST_BEARING. Never production assurance. See sandbox/README.md.
+    const { sandboxMain } = await import("../sandbox/cli.mjs");
+    return sandboxMain([subject, ...rest].filter((value) => value !== undefined));
+  }
   if (command === "check-init") {
     const options = parseCheckInitOptions([subject, ...rest].filter((value) => value !== undefined));
     const output = await checkInitCommand(options);
@@ -326,6 +332,7 @@ async function main(argv) {
   console.log("Note: the default base URL http://127.0.0.1:8080 targets a locally run Intentrax engine; the hosted engine base URL is https://api.intentrax.com (override with --base-url or INTENTRAX_BASE_URL).");
   console.log("INTENTRAX_API_KEY and your sandbox base URL are issued after an architectural review: https://www.intentrax.com/request-architectural-review");
   console.log("Offline check that works right now with no key: npx @intentrax/sdk check-init");
+  console.log("See the whole assurance flow locally, no key or network (not production assurance): npx @intentrax/sdk sandbox");
   return 0;
 }
 
@@ -2991,6 +2998,8 @@ Usage:
   intentrax check-init --output-dir <dir> [--json]
   intentrax verify-proof <proof-export.json> [--trusted-keys <key-set.json>] [--policy-document <policy.json>] [--json] [--report-out <file>]
   intentrax verify-pdf-receipt <receipt.pdf> --pdf-hash <X-Intentrax-PDF-Hash> [--json] [--report-out <file>]
+  intentrax sandbox [--scenario confirmed|contradicted] [--check <read-only-check.mjs>] [--dir <dir>] [--json]
+  intentrax sandbox verify <bundle.json> [--keys <local-key-set.json>] [--issuer-keys <pinned-external-issuers.json>] [--require-external-issuer <issuer>]... [--json]
 
 Adapters:
   ${Object.keys(ADAPTERS).join(", ")}
@@ -3074,6 +3083,9 @@ Examples:
   intentrax verify-proof node_modules/@intentrax/sdk/examples/sandbox/tampered-aep-swap.json
   intentrax verify-proof proof-export.json --trusted-keys intentrax-production-keys.json
   intentrax verify-pdf-receipt .intentrax/proof-001-aep-receipt.pdf --pdf-hash <X-Intentrax-PDF-Hash>
+  intentrax sandbox
+  intentrax sandbox --scenario contradicted
+  intentrax sandbox --check ./my-check.mjs
 `);
 }
 

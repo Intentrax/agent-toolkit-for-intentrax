@@ -51,10 +51,12 @@ Most hosts take the identical block below — only the file location differs. Ad
 | Gemini CLI | `~/.gemini/settings.json` or project `.gemini/settings.json` |
 | Qwen Code | `~/.qwen/settings.json` or project `.qwen/settings.json` |
 
-Claude Code users can instead install the bundled plugin (skill + server):
+Claude Code users can instead install the plugins: `intentrax-mcp` bundles this
+server, and `intentrax-execution-assurance` adds the skills.
 
 ```
 /plugin marketplace add Intentrax/intentrax-skills
+/plugin install intentrax-mcp@intentrax
 /plugin install intentrax-execution-assurance@intentrax
 ```
 

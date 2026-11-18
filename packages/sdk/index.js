@@ -1116,7 +1116,9 @@ const SATISFYING_ASSESSMENT_RESULTS = new Set(["VERIFIED", "ATTESTED", "OBSERVED
 
 // §5.4, verbatim order. `assessments` is { [dimension]: result }. A required
 // dimension that is missing or NOT_APPLICABLE counts as INSUFFICIENT_EVIDENCE
-// (invariant 4: never a bare pass).
+// (invariant 4: never a bare pass). A CONTRADICTED result in ANY dimension,
+// required by the profile or not, yields CONFLICTING_EVIDENCE (finding V-1):
+// a sealed NON_COMPLIANT policy decision must never read as VERIFIED_FOR_SCOPE.
 export function deriveAssuranceVerdict(assessments, profile) {
   const required = Object.hasOwn(ASSURANCE_PROFILES, profile) ? ASSURANCE_PROFILES[profile] : undefined;
   if (!required) {
@@ -1126,7 +1128,7 @@ export function deriveAssuranceVerdict(assessments, profile) {
   const req = required.map((d) => assessments[d] ?? "INSUFFICIENT_EVIDENCE");
   if (all.includes("FAILED")) return ASSURANCE_VERDICTS.VERIFICATION_FAILED;
   if (assessments.SIGNER_AUTHENTICITY !== "VERIFIED") return ASSURANCE_VERDICTS.INTEGRITY_ONLY;
-  if (req.includes("CONTRADICTED")) return ASSURANCE_VERDICTS.CONFLICTING_EVIDENCE;
+  if (all.includes("CONTRADICTED")) return ASSURANCE_VERDICTS.CONFLICTING_EVIDENCE;
   if (req.includes("PENDING")) return ASSURANCE_VERDICTS.PENDING_FINALITY;
   if (req.some((r) => WEAK_ASSESSMENT_RESULTS.has(r) || !SATISFYING_ASSESSMENT_RESULTS.has(r))) return ASSURANCE_VERDICTS.INSUFFICIENT_EVIDENCE;
   return ASSURANCE_VERDICTS.VERIFIED_FOR_SCOPE;

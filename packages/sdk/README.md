@@ -9,7 +9,8 @@ npm install @intentrax/sdk
 The package is public on npm (Apache-2.0). Everything below that says
 "offline" or "local" runs today with no API key: `init --dry-run`,
 `check-init`, `verify-proof` (sandbox sample proofs, including tampered ones,
-are bundled at `examples/sandbox/`), and `verify-pdf-receipt`. Live execution
+are bundled at `examples/sandbox/`), `verify-pdf-receipt`, and `sandbox` (the
+local assurance sandbox below). Live execution
 keys and your sandbox base URL are issued after an architectural review at
 <https://www.intentrax.com/request-architectural-review>.
 
@@ -31,9 +32,44 @@ Public surfaces:
   and signer pinning against published key sets
 - `intentrax verify-pdf-receipt <receipt.pdf>` for local downloaded PDF receipt
   byte/hash verification
+- `intentrax sandbox` for the local assurance sandbox: a signed decision, an
+  executor report, an independent read-only outcome check (`--check` runs your
+  own) and offline verification with ephemeral local keys, no account and no
+  network. Verdicts are capped at `LOCAL_NON_TRUST_BEARING`: never production
+  assurance. See [sandbox/README.md](sandbox/README.md) for the limitations.
 
 The published package exports Node-runnable `.js` modules with `.d.ts` type
 declarations and is gated on Node 20 and Node 24.
+
+## Local assurance sandbox (no key, no network)
+
+`intentrax sandbox` runs one consequential action through the whole flow,
+in-process: a signed decision before execution, an executor report (a
+self-report), an independent read-only check of the outcome, a sealed bundle,
+and offline verification (eight per-dimension assessments and the verdict rule).
+
+```bash
+npx @intentrax/sdk sandbox                          # sample action; outcome confirmed
+npx @intentrax/sdk sandbox --scenario contradicted  # ALLOW + "SUCCEEDED", but the read disagrees
+npx @intentrax/sdk sandbox --check ./my-check.mjs   # a read-only check of YOUR system
+```
+
+What it is not:
+- **Not production assurance.** Every signature is made by an ephemeral key
+  generated on your machine (`environment: "local"`, `trust_bearing: false`,
+  written under the gitignored `.intentrax/local/`). The best possible verdict
+  is `LOCAL_NON_TRUST_BEARING`, never `VERIFIED_FOR_SCOPE`, whatever key set
+  you pin. A contradiction is still reported as `CONFLICTING_EVIDENCE`.
+- **Not a production proof.** The bundle uses the preview effect-assurance
+  format. `verify-proof`, hosted verify and the Verification Mark reject it.
+- **Your check is yours.** A `--check` read is labelled `SELF_REPORTED`, not an
+  Intentrax-pulled authoritative read. It runs in a worker thread, is
+  read-only by contract only, and is the only code in a run that could touch
+  a network.
+- It never reads, derives or requests a production or published sandbox key.
+
+Limitations, exit codes and the `verify` options (`--keys`, `--issuer-keys`,
+`--require-external-issuer`): [sandbox/README.md](sandbox/README.md).
 
 One-command adapter onboarding:
 
@@ -220,8 +256,10 @@ table. It states what the proof establishes and what it does not:
   `NOT_ASSESSED` for a legacy proof.
 - `verdict`: derived from the rows by a fixed rule, never asserted by a signer.
   `VERIFIED_FOR_SCOPE` (record intact, trusted signers; the scope is the
-  required dimensions only), `INTEGRITY_ONLY` (signer not established) or
-  `VERIFICATION_FAILED` (for example a revoked signer).
+  required dimensions only), `INTEGRITY_ONLY` (signer not established),
+  `CONFLICTING_EVIDENCE` (since 1.7.0: any dimension is `CONTRADICTED`, required
+  or not, for example a sealed `NON_COMPLIANT` policy decision on a trusted
+  proof) or `VERIFICATION_FAILED` (for example a revoked signer).
 - `limitations[]`: machine-readable codes with text. A legacy proof always lists
   `EXECUTION_NOT_ATTESTED`, `EFFECT_NOT_VERIFIED`, `POLICY_BINDING_SYNTHETIC` and
   `COMPLETENESS_NOT_ESTABLISHED`, plus `SIGNER_AUTHENTICITY_REQUIRES_PINNED_ANCHORS`

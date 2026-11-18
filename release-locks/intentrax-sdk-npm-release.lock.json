@@ -1,10 +1,10 @@
 {
   "$schema": "intentrax://schemas/verification/typescript-sdk/npm-release-lock",
   "release_id": "typescript-sdk-npm-release-001",
-  "release_version": "@intentrax/sdk/1.6.0",
+  "release_version": "@intentrax/sdk/1.7.0",
   "sdk_contract_version": "intentrax-public-sdk-contract/1.0",
   "package_name": "@intentrax/sdk",
-  "package_version": "1.6.0",
+  "package_version": "1.7.0",
   "canonicalization_version": "json-stable-indent/1.0",
   "hash_algorithm": "SHA-256",
   "generator_version": "intentrax-typescript-sdk-release-gen/1.0",
@@ -27,15 +27,15 @@
     "dry_run_only_reason": "source tree stores deterministic npm release evidence only; registry publish and signing must run as controlled release operations outside pull request CI"
   },
   "npm_pack": {
-    "id": "@intentrax/sdk@1.6.0",
+    "id": "@intentrax/sdk@1.7.0",
     "name": "@intentrax/sdk",
-    "version": "1.6.0",
-    "size": 106081,
-    "unpackedSize": 592665,
-    "shasum": "cf97576009b588e37230435a9276e0a9cc89af15",
-    "integrity": "sha512-LcARdMD1pFmlmhDehhL4clQ5+VJfuvo7bkvvpQG3RO0iVAnT4aQi0A95T8OSgLctD8szxlaJwFPIbj8IKWt2Nw==",
-    "tarball_sha256": "469bf0b4359a9c52bd99d6db0dc0362f237a838673f68f7cf4ad3e481ad1adf7",
-    "filename": "intentrax-sdk-1.6.0.tgz",
+    "version": "1.7.0",
+    "size": 147484,
+    "unpackedSize": 730629,
+    "shasum": "112d4a452d933a87840017020c9d5c1353933e7e",
+    "integrity": "sha512-j3Xp0B5xYa6G8h3rw8XDeP9mnVBU/eu91FuBUMga+OuB3pdx6Jta8TK0wBAd7TTP8OYjhud9qglHBXiO+uRa9g==",
+    "tarball_sha256": "9b84c7b6f33316d8b3fe3a9b814e8387b92d0d41dd45e1022de020c8836309a8",
+    "filename": "intentrax-sdk-1.7.0.tgz",
     "files": [
       {
         "path": "LICENSE",
@@ -44,12 +44,12 @@
       },
       {
         "path": "README.md",
-        "size": 18124,
+        "size": 20377,
         "mode": 420
       },
       {
         "path": "cli/intentrax.mjs",
-        "size": 152666,
+        "size": 153529,
         "mode": 420
       },
       {
@@ -144,17 +144,102 @@
       },
       {
         "path": "index.js",
-        "size": 85609,
+        "size": 85808,
         "mode": 420
       },
       {
         "path": "index.ts",
-        "size": 85609,
+        "size": 85808,
         "mode": 420
       },
       {
         "path": "package.json",
-        "size": 1322,
+        "size": 1392,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/README.md",
+        "size": 13886,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/authority.mjs",
+        "size": 2999,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/bundle.mjs",
+        "size": 3191,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/canonical.mjs",
+        "size": 2093,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/check-runner.mjs",
+        "size": 2228,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/check-worker.mjs",
+        "size": 1191,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/cli.mjs",
+        "size": 17198,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/effect-verifier.mjs",
+        "size": 10301,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/effects.mjs",
+        "size": 3390,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/envelope.mjs",
+        "size": 6368,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/examples/read-only-check.example.mjs",
+        "size": 1565,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/external-decision.mjs",
+        "size": 16924,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/keys.mjs",
+        "size": 7324,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/model.mjs",
+        "size": 7276,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/run.mjs",
+        "size": 12564,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/time.mjs",
+        "size": 934,
+        "mode": 420
+      },
+      {
+        "path": "sandbox/verifier.mjs",
+        "size": 24948,
         "mode": 420
       },
       {
@@ -173,7 +258,7 @@
         "mode": 420
       }
     ],
-    "entryCount": 27,
+    "entryCount": 44,
     "bundled": []
   },
   "artifacts": [
@@ -198,7 +283,7 @@
     {
       "path": "sdk/adoption/pb-a5-003-006-beta-acceptance.v1.json",
       "role": "adoption_acceptance_lock",
-      "sha256": "a576ee8f48f0832b1c2564c8bceca04790ae41c5d0850ce6c339ca9a96d8d1c2",
+      "sha256": "259c60f82414b1c323778243aad833c3047d4b1f32553887ff59aa959663d6f4",
       "bytes": 14791
     },
     {
@@ -252,20 +337,20 @@
     {
       "path": "sdk/typescript/README.md",
       "role": "npm_package_documentation",
-      "sha256": "65d005812185102b8d06950326dbc650bc9cc00054006ff9efabc7686042ecb9",
-      "bytes": 18124
+      "sha256": "5a087a5589f0eac848af40e62d03f53d09d1ffa3511471f239bee9432f50ff6e",
+      "bytes": 20377
     },
     {
       "path": "sdk/typescript/cli/intentrax.mjs",
       "role": "npm_package_cli",
-      "sha256": "6c2e2b227d5b1b0b31c5fff507e563e3cfd00a3975e4943fdba744a3a6587830",
-      "bytes": 152666
+      "sha256": "7de66dd015118e5aced0553504656676f83328b1a9cc60d88ec025a4719592c0",
+      "bytes": 153529
     },
     {
       "path": "sdk/typescript/conformance.test.mjs",
       "role": "npm_package_conformance_tests",
-      "sha256": "9385e22b0a96ec11217ecde2d812a8836ca9f3e88c85134305019618b39b6a23",
-      "bytes": 111498
+      "sha256": "9311418257c55e85a60a95560b74bca25fd24c7de2a346d206c7d7034c72a5e1",
+      "bytes": 114417
     },
     {
       "path": "sdk/typescript/examples/adapters/claude-code.md",
@@ -342,14 +427,14 @@
     {
       "path": "sdk/typescript/index.js",
       "role": "npm_package_runtime",
-      "sha256": "99e2ba783c47be290728b86aa7ebe83a64a22f67f34da3a9565e5cccfb856360",
-      "bytes": 85609
+      "sha256": "0e0fa4ff5db89ef57a3cdba660e2b4c132ad431bb92197a3f0f412989b9b8a80",
+      "bytes": 85808
     },
     {
       "path": "sdk/typescript/index.ts",
       "role": "npm_package_source",
-      "sha256": "99e2ba783c47be290728b86aa7ebe83a64a22f67f34da3a9565e5cccfb856360",
-      "bytes": 85609
+      "sha256": "0e0fa4ff5db89ef57a3cdba660e2b4c132ad431bb92197a3f0f412989b9b8a80",
+      "bytes": 85808
     },
     {
       "path": "sdk/typescript/live-runtime.test.mjs",
@@ -360,14 +445,14 @@
     {
       "path": "sdk/typescript/package-lock.json",
       "role": "npm_install_lock",
-      "sha256": "bcf01313970ea5141fee9066be7213257a97e2ad2c30865a2ffac6e1d065d4d8",
+      "sha256": "146c5877ac2f7de5b3623b2b7d40826f43d2862a417f8973af418598bffc1c69",
       "bytes": 338
     },
     {
       "path": "sdk/typescript/package.json",
       "role": "npm_package_manifest",
-      "sha256": "41983ed9f31d8f5cebe4299bee9816641fd48dfe51fcf81d3f45938bccf3789f",
-      "bytes": 1322
+      "sha256": "a6547a72cdd9ed8c2356fe750892888a01cbebb035d64e376a9f0a7693400e52",
+      "bytes": 1392
     },
     {
       "path": "verification/external_verifiers/pb_a5_003_006_beta_acceptance.py",
@@ -376,5 +461,5 @@
       "bytes": 10208
     }
   ],
-  "release_hash": "be81e9d69f712d9d978645ab2e8aa5ffa2a7c8b94384ad19c567501d3a7dfa8e"
+  "release_hash": "422090e795f5b91f6b02a46e1c5d1be7679f14aa66b2a9efd89d1f0736838693"
 }
