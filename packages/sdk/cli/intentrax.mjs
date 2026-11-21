@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildAgentGatewayAdmissionEnvelope, buildLegacyVerificationAssessment, compilePolicyDocument, evaluateCompiledPolicy, policyReevaluationMismatches } from "../index.js";
 
-const VERSION = "1.7.0";
+const VERSION = "1.8.0";
 const ADMISSION_SCHEMA_VERSION = "intentrax.runtime.agent_admission_request/1.0";
 const INIT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_init/1.0";
 const ACTION_RECEIPT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_action_receipt/1.0";
@@ -254,6 +254,24 @@ async function main(argv) {
     // LOCAL_NON_TRUST_BEARING. Never production assurance. See sandbox/README.md.
     const { sandboxMain } = await import("../sandbox/cli.mjs");
     return sandboxMain([subject, ...rest].filter((value) => value !== undefined));
+  }
+  if (command === "mcp") {
+    // MCP tool pinning: pin a server's tool definitions, check them, or proxy
+    // with --on-drift block. Offline; no Intentrax account. See mcp/README.md.
+    const { mcpMain } = await import("../mcp/cli.mjs");
+    return mcpMain([subject, ...rest].filter((value) => value !== undefined));
+  }
+  if (command === "readback") {
+    // Read the outcome back before reporting success (SELF_REPORTED; not an
+    // Intentrax attestation). See readback/README.md.
+    const { readbackMain } = await import("../readback/cli.mjs");
+    return readbackMain([subject, ...rest].filter((value) => value !== undefined));
+  }
+  if (command === "scan") {
+    // Static, report-only scan for agent actions an agent can reach (exit 0
+    // none, 20 findings, 2 error). Nothing is run or sent. See scan/README.md.
+    const { scanMain } = await import("../scan/cli.mjs");
+    return scanMain([subject, ...rest].filter((value) => value !== undefined));
   }
   if (command === "check-init") {
     const options = parseCheckInitOptions([subject, ...rest].filter((value) => value !== undefined));
@@ -3000,6 +3018,11 @@ Usage:
   intentrax verify-pdf-receipt <receipt.pdf> --pdf-hash <X-Intentrax-PDF-Hash> [--json] [--report-out <file>]
   intentrax sandbox [--scenario confirmed|contradicted] [--check <read-only-check.mjs>] [--dir <dir>] [--json]
   intentrax sandbox verify <bundle.json> [--keys <local-key-set.json>] [--issuer-keys <pinned-external-issuers.json>] [--require-external-issuer <issuer>]... [--json]
+  intentrax readback --check <read-only-check.mjs> --expected <json> [--claimed <json>] [--retries N] [--json]
+  intentrax scan [dir] [--json] [--include-tests] [--max-files N]
+  intentrax mcp pin --server <cmd|url> [--name <name>] [--accept <tool,...> | --replace] [--json]
+  intentrax mcp check [--pins <file>] [--name <name>] [--json]
+  intentrax mcp proxy [--pins <file>] [--name <name>] [--on-drift block|warn]
 
 Adapters:
   ${Object.keys(ADAPTERS).join(", ")}
@@ -3063,6 +3086,23 @@ Proof export verification:
   Add more sets, for example revocations, with --trusted-keys <file>
   (repeatable).
 
+Read-back (intentrax readback --help):
+  Reads the system of record with your read-only check before anyone reports
+  success. 0 CONFIRMED, 12 CONTRADICTED (CAUGHT), 10 PENDING, 11 UNKNOWN,
+  64 usage. SELF_REPORTED: not an Intentrax attestation.
+
+Scan (intentrax scan --help):
+  Lists the destructive or consequential actions an AI agent can reach in a
+  project and flags broad credentials (EXPOSED), missing gates (UNGATED) and
+  success reported without a read-back (SELF-REPORTED). Heuristic and static:
+  nothing is run or sent. 0 no findings, 20 findings, 2 error.
+
+MCP tool pinning (intentrax mcp --help):
+  pin records a server's tool definitions in .intentrax/mcp-pins.json; check
+  compares them (0 MATCH, 10 CHANGED, 2 UNCHECKED, 1 usage); proxy blocks
+  changed and new tools in a stdio proxy. Covers tool definitions only. It
+  does not show that the server's code or behaviour is unchanged.
+
 PDF receipt verification:
   verify-pdf-receipt reads downloaded PDF receipt bytes, checks the PDF header,
   recomputes SHA-256, and compares it with the X-Intentrax-PDF-Hash response
@@ -3086,6 +3126,10 @@ Examples:
   intentrax sandbox
   intentrax sandbox --scenario contradicted
   intentrax sandbox --check ./my-check.mjs
+  intentrax readback --check ./read-refund.mjs --expected '{"status":"succeeded"}' --claimed '{"status":"processed"}'
+  intentrax scan .
+  intentrax mcp pin --name github --server https://api.example.com/mcp --header 'Authorization: Bearer \${GITHUB_TOKEN}'
+  intentrax mcp check
 `);
 }
 

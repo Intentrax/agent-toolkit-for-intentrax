@@ -1,6 +1,6 @@
 {
   "name": "@intentrax/sdk",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Intentrax deterministic public SDK for proof verification and API-wrapper execution.",
   "type": "module",
   "license": "Apache-2.0",
@@ -18,6 +18,13 @@
     "./http": {
       "types": "./http.d.ts",
       "default": "./http.js"
+    },
+    "./mcp": {
+      "types": "./mcp/index.d.ts",
+      "default": "./mcp/index.mjs"
+    },
+    "./readback": {
+      "default": "./readback/index.mjs"
     }
   },
   "types": "./index.d.ts",
@@ -32,9 +39,17 @@
     "http.ts",
     "http.d.ts",
     "README.md",
+    "mcp/*.mjs",
+    "mcp/*.d.ts",
+    "mcp/README.md",
+    "readback/*.mjs",
+    "readback/recipes/*.mjs",
+    "readback/README.md",
     "sandbox/*.mjs",
     "sandbox/examples",
     "sandbox/README.md",
+    "scan/*.mjs",
+    "scan/README.md",
     "trust"
   ],
   "keywords": [

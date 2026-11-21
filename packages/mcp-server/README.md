@@ -12,6 +12,23 @@ admits, signs, writes, or claims proof authority:
 Requires **Node.js 20+**. Ships as a single compiled JavaScript bundle, so
 `npx @intentrax/mcp-server` works out of the box (no TypeScript loader needed).
 
+## No install: the hosted connector
+
+For chat surfaces that can't run a local process (Claude on the web, desktop,
+or mobile), Intentrax runs a hosted, keyless, read-only MCP server at
+`https://mcp.intentrax.com/public`. Add it as a custom connector with
+**No sign-in**, or in Claude Code run
+`claude mcp add --transport http intentrax https://mcp.intentrax.com/public`.
+It is a separate server, not this package. It has three tools:
+
+- `intentrax_verify_public_proof`, the same public lookup as here;
+- `intentrax_get_trusted_key_set`;
+- `intentrax_verify_proof_export`, which runs the SDK's own `verify-proof` on an
+  export you paste, against the pinned keys.
+
+It has no tenant tool. Reading your own tenant's proofs still needs this
+package.
+
 ## Use it with a coding agent
 
 The command is the same everywhere — `npx -y @intentrax/mcp-server`. Only the

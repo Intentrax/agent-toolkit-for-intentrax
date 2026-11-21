@@ -9,8 +9,8 @@ npm install @intentrax/sdk
 The package is public on npm (Apache-2.0). Everything below that says
 "offline" or "local" runs today with no API key: `init --dry-run`,
 `check-init`, `verify-proof` (sandbox sample proofs, including tampered ones,
-are bundled at `examples/sandbox/`), `verify-pdf-receipt`, and `sandbox` (the
-local assurance sandbox below). Live execution
+are bundled at `examples/sandbox/`), `verify-pdf-receipt`, `sandbox` (the
+local assurance sandbox below), `scan`, `readback` and `mcp`. Live execution
 keys and your sandbox base URL are issued after an architectural review at
 <https://www.intentrax.com/request-architectural-review>.
 
@@ -37,6 +37,21 @@ Public surfaces:
   own) and offline verification with ephemeral local keys, no account and no
   network. Verdicts are capped at `LOCAL_NON_TRUST_BEARING`: never production
   assurance. See [sandbox/README.md](sandbox/README.md) for the limitations.
+- `intentrax scan [dir]` (1.8.0) lists the destructive or consequential actions
+  an agent can reach in a project and flags broad credentials, missing gates
+  and success reported without a read-back. Heuristic and static: nothing is
+  run or sent. See [scan/README.md](scan/README.md).
+- `intentrax readback` and `@intentrax/sdk/readback` (1.8.0): `confirmThenReport`
+  reads the system of record with your read-only check before anyone reports
+  success (`CONFIRMED`, `CAUGHT …`, `PENDING`, `UNKNOWN`). Results are
+  `SELF_REPORTED`, not an Intentrax attestation. See
+  [readback/README.md](readback/README.md).
+- `intentrax mcp pin|check|proxy` and `@intentrax/sdk/mcp` (1.8.0) pin a
+  third-party MCP server's tool definitions, report changes (exit 10,
+  `CHANGED …`) and block changed or new tools in a stdio proxy. Offline; tool
+  descriptions never leave your machine. Covers tool definitions only. It does
+  not show that the server's code or behaviour is unchanged. See
+  [mcp/README.md](mcp/README.md).
 
 The published package exports Node-runnable `.js` modules with `.d.ts` type
 declarations and is gated on Node 20 and Node 24.
