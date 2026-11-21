@@ -280,11 +280,14 @@ export function extractTools(text, relPath) {
   }
   found.sort((a, b) => a.index - b.index);
   const lineOf = makeLineIndex(text);
+  // Python decorators stacked directly above a tool (`@enforce` over
+  // `@mcp.tool()`) belong to that tool's span.
+  const starts = found.map((t) => (isPython ? decoratorStart(text, t.index) : t.index));
   // Dispatcher handlers (`case "x":`) belong to their own tool, so a
   // definition span stops where any of them starts.
   const dispatchers = found.map((t) => dispatcherSpan(text, t.name)).filter(Boolean);
   return found.map((t, i) => {
-    const nextIndex = i + 1 < found.length ? found[i + 1].index : text.length;
+    const nextIndex = i + 1 < found.length ? starts[i + 1] : text.length;
     let end = nextIndex;
     for (const d of dispatchers) if (d.start > t.index && d.start < end) end = d.start;
     const startLine = lineOf(t.index);
@@ -301,23 +304,107 @@ export function extractTools(text, relPath) {
       }
       end = j;
     }
-    const spans = [{ start: t.index, end }];
+    const spans = [{ start: starts[i], end }];
     const dispatch = dispatcherSpan(text, t.name);
-    if (dispatch && (dispatch.start < t.index || dispatch.start >= end)) spans.push(dispatch);
+    if (dispatch && (dispatch.start < starts[i] || dispatch.start >= end)) spans.push(dispatch);
     return { ...t, line: startLine, spans };
   });
 }
 
-// Relative imports followed from an MCP server entry file.
+// Start of the Python decorator stack directly above `index` (which must be
+// the first thing on its line), including multi-line decorator arguments.
+// Returns `index` when there is none.
+function decoratorStart(text, index) {
+  const lineStart = text.lastIndexOf("\n", index - 1) + 1;
+  if (text.slice(lineStart, index).trim() !== "") return index;
+  let committed = index;
+  let cursor = lineStart;
+  let depth = 0;
+  for (let n = 0; n < 40 && cursor > 0; n += 1) {
+    const prevEnd = cursor - 1;
+    const prevStart = text.lastIndexOf("\n", prevEnd - 1) + 1;
+    const line = text.slice(prevStart, prevEnd);
+    depth += (line.match(/[)\]}]/g) ?? []).length - (line.match(/[([{]/g) ?? []).length;
+    cursor = prevStart;
+    if (/^\s*@/.test(line) && depth <= 0) {
+      committed = prevStart;
+      depth = 0;
+      continue;
+    }
+    if (depth > 0) continue; // inside a multi-line decorator's arguments
+    break;
+  }
+  return committed;
+}
+
+// Imports, used to follow an MCP server entry file into its modules and to
+// link gates across files. Each entry is `{ module, bindings, namespace,
+// submodules }`:
+// - `bindings`: the local names the import creates (`import { a as b }` gives
+//   "b", Python `from .gate import guard` gives "guard");
+// - `namespace`: a local name whose members are the module's exports
+//   (`import * as g`, `const g = require()`, Python `import pkg.mod as g`);
+// - `submodules` (Python): names in `from . import x` that may be modules.
+// JS/TS imports are relative only; Python `from x import y` and `import x` may
+// be absolute (resolved against the server or project root by the caller).
+const IDENT = /^[A-Za-z_$][\w$]*$/;
+
 export function relativeImports(text, isPython) {
   const out = [];
   let m;
   if (isPython) {
-    const re = /^\s*from\s+(\.+[\w.]*|[A-Za-z_][\w.]*)\s+import\s+([^\n]+)/gm;
-    while ((m = re.exec(text))) out.push({ module: m[1], names: m[2] });
+    const re = /^[ \t]*from[ \t]+(\.+[\w.]*|[A-Za-z_][\w.]*)[ \t]+import[ \t]+(\([^)]*\)|[^\n]+)/gm;
+    while ((m = re.exec(text))) {
+      const parts = m[2].replace(/#[^\n]*/g, "").replace(/[()\\]/g, " ").split(",").map((x) => x.trim()).filter(Boolean);
+      const bindings = [];
+      const submodules = [];
+      for (const part of parts) {
+        const [imported, alias] = part.split(/\s+as\s+/).map((x) => x.trim());
+        if (!IDENT.test(imported)) continue;
+        bindings.push(alias && IDENT.test(alias) ? alias : imported);
+        submodules.push(imported);
+      }
+      out.push({ module: m[1], names: m[2], bindings, submodules, namespace: null });
+    }
+    const plain = /^[ \t]*import[ \t]+([A-Za-z_][\w.]*)(?:[ \t]+as[ \t]+([A-Za-z_]\w*))?[ \t]*(?:#[^\n]*)?$/gm;
+    while ((m = plain.exec(text))) out.push({ module: m[1], names: "", bindings: [], submodules: [], namespace: m[2] ?? m[1] });
   } else {
-    const re = /(?:import|export)\s[^'"`;]*?from\s*["'](\.{1,2}\/[^"']+)["']|import\s*\(\s*["'](\.{1,2}\/[^"']+)["']\s*\)|require\(\s*["'](\.{1,2}\/[^"']+)["']\s*\)|import\s+["'](\.{1,2}\/[^"']+)["']/g;
-    while ((m = re.exec(text))) out.push({ module: m[1] ?? m[2] ?? m[3] ?? m[4] });
+    const re = /(?:import|export)\s([^'"`;]*?)from\s*["'](\.{1,2}\/[^"']+)["']|import\s*\(\s*["'](\.{1,2}\/[^"']+)["']\s*\)|require\(\s*["'](\.{1,2}\/[^"']+)["']\s*\)|import\s+["'](\.{1,2}\/[^"']+)["']/g;
+    while ((m = re.exec(text))) {
+      const module = m[2] ?? m[3] ?? m[4] ?? m[5];
+      const bindings = [];
+      let namespace = null;
+      const clause = (m[1] ?? "").replace(/^\s*type\s+/, "");
+      const ns = /\*\s*as\s+([A-Za-z_$][\w$]*)/.exec(clause);
+      if (ns) namespace = ns[1];
+      const braces = /\{([^}]*)\}/.exec(clause);
+      if (braces) {
+        for (const part of braces[1].split(",")) {
+          const [imported, alias] = part.trim().replace(/^type\s+/, "").split(/\s+as\s+/);
+          const local = (alias ?? imported ?? "").trim();
+          if (IDENT.test(local)) bindings.push(local);
+        }
+      }
+      const def = /^\s*([A-Za-z_$][\w$]*)\s*(?:,|$)/.exec(clause);
+      if (def && def[1] !== "type") namespace = namespace ?? def[1];
+      if (def && def[1] !== "type") bindings.push(def[1]);
+      // const g = require("./gate") / const { a, b: c } = require("./gate")
+      if (m[4]) {
+        const before = text.slice(Math.max(0, m.index - 160), m.index);
+        const decl = /(?:const|let|var)\s+(?:([A-Za-z_$][\w$]*)|\{([^}]*)\})\s*=\s*$/.exec(before);
+        if (decl?.[1]) {
+          namespace = decl[1];
+          bindings.push(decl[1]);
+        }
+        if (decl?.[2]) {
+          for (const part of decl[2].split(",")) {
+            const local = part.split(":").pop().trim();
+            if (IDENT.test(local)) bindings.push(local);
+          }
+        }
+      }
+      out.push({ module, bindings, namespace, submodules: [] });
+    }
   }
   return out;
 }

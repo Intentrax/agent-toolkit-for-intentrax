@@ -1304,8 +1304,14 @@ const POLICY_FIELDS = new Set(["policy_id", "policy_version", "rules", "default_
 const POLICY_RULE_FIELDS = new Set(["rule_id", "effect", "conditions", "constraints", "priority"]);
 const POLICY_CONDITION_FIELDS = new Set(["field", "operator", "value"]);
 const POLICY_CONSTRAINT_FIELDS = new Set(["constraint_id", "type", "value"]);
-const POLICY_EFFECTS = new Set(["ALLOW", "DENY", "CONDITIONAL"]);
-const POLICY_CONDITION_OPERATORS = new Set(["EQUALS", "NOT_EQUALS", "IN", "NOT_IN", "EXISTS", "GREATER_THAN", "GREATER_THAN_OR_EQUAL", "LESS_THAN", "LESS_THAN_OR_EQUAL"]);
+// C2.3 compiles only ALLOW and DENY, so C2.1 refuses CONDITIONAL (Go engine
+// allowedEffects); constraints on ALLOW/DENY rules stay passive.
+const POLICY_EFFECTS = new Set(["ALLOW", "DENY"]);
+// Exactly the operators the C2.3 compiler can lower (POLICY_COMPARISON_OPCODES).
+// IN, NOT_IN and EXISTS have no opcode, so C2.1 refuses them (Go engine
+// unsupportedConditionOperators; owner decision E-5 defers adding them).
+const POLICY_CONDITION_OPERATORS = new Set(["EQUALS", "NOT_EQUALS", "GREATER_THAN", "GREATER_THAN_OR_EQUAL", "LESS_THAN", "LESS_THAN_OR_EQUAL"]);
+const POLICY_UNSUPPORTED_CONDITION_OPERATORS = new Set(["IN", "NOT_IN", "EXISTS"]);
 const POLICY_CONSTRAINT_TYPES = new Set(["MAX_AMOUNT", "MAX_RETRIES", "TIMEOUT_MS", "REQUIRE_APPROVAL", "REQUIRE_GUARDRAIL_PASS", "RESTRICT_TARGET"]);
 const POLICY_FORBIDDEN_TOKENS = Object.freeze(["clock", "command", "dynamic", "eval", "external", "function", "http://", "https://", "latest", "now", "random", "script", "webhook"]);
 const POLICY_COMPARISON_OPCODES = Object.freeze({
@@ -1384,9 +1390,42 @@ function policyNonEmpty(value) {
   return typeof value === "string" && value !== "" && value.trim() === value;
 }
 
+// Port of the Go engine's hasForbiddenSemanticToken: forbidden tokens match
+// whole tokens, not substrings ("now" and "random_seed" are refused,
+// "snowflake" and "unknown" are not). A token is a maximal run of ASCII
+// letters and digits; a lowercase letter or digit followed by an uppercase
+// letter starts a new token ("getNow" is "get", "now"); every other character
+// separates. Tokens compare case-insensitively. An entry with a
+// non-alphanumeric suffix ("http://") matches a token equal to its
+// alphanumeric part ("http") immediately followed by that suffix.
+function isPolicyTokenChar(char) {
+  return (char >= "a" && char <= "z") || (char >= "A" && char <= "Z") || (char >= "0" && char <= "9");
+}
+
+function startsPolicyCamelCaseToken(previous, current) {
+  return ((previous >= "a" && previous <= "z") || (previous >= "0" && previous <= "9")) && current >= "A" && current <= "Z";
+}
+
+const POLICY_FORBIDDEN_TOKEN_PARTS = Object.freeze(POLICY_FORBIDDEN_TOKENS.map((token) => {
+  let end = 0;
+  while (end < token.length && isPolicyTokenChar(token[end])) end += 1;
+  return Object.freeze({ word: token.slice(0, end), suffix: token.slice(end) });
+}));
+
 function hasForbiddenPolicyToken(value) {
-  const lower = value.toLowerCase();
-  return POLICY_FORBIDDEN_TOKENS.some((token) => lower.includes(token));
+  for (let start = 0; start < value.length;) {
+    if (!isPolicyTokenChar(value[start])) {
+      start += 1;
+      continue;
+    }
+    let end = start + 1;
+    while (end < value.length && isPolicyTokenChar(value[end]) && !startsPolicyCamelCaseToken(value[end - 1], value[end])) end += 1;
+    const word = value.slice(start, end).toLowerCase();
+    const rest = value.slice(end);
+    if (POLICY_FORBIDDEN_TOKEN_PARTS.some((token) => word === token.word && rest.startsWith(token.suffix))) return true;
+    start = end;
+  }
+  return false;
 }
 
 function policyLiteral(value) {
@@ -1428,6 +1467,7 @@ function validatePolicyDefinition(policy, allowedEventFields) {
     if (!isPlainPolicyObject(rule) || !onlyKnownFields(rule, POLICY_RULE_FIELDS)) throw invalidPolicy(`rules[${ruleIndex}] invalid`);
     if (typeof rule.rule_id !== "string" || !POLICY_IDENTIFIER_RE.test(rule.rule_id) || seenRuleIDs.has(rule.rule_id)) throw invalidPolicy(`rules[${ruleIndex}].rule_id invalid`);
     seenRuleIDs.add(rule.rule_id);
+    if (rule.effect === "CONDITIONAL") throw invalidPolicy(`rules[${ruleIndex}].effect CONDITIONAL is not supported by the policy bytecode compiler`);
     if (!POLICY_EFFECTS.has(rule.effect)) throw invalidPolicy(`rules[${ruleIndex}].effect invalid`);
     if (!Number.isSafeInteger(rule.priority)) throw invalidPolicy(`rules[${ruleIndex}].priority invalid`);
     if (!Array.isArray(rule.conditions)) throw invalidPolicy(`rules[${ruleIndex}].conditions invalid`);
@@ -1435,6 +1475,7 @@ function validatePolicyDefinition(policy, allowedEventFields) {
       const at = `rules[${ruleIndex}].conditions[${conditionIndex}]`;
       if (!isPlainPolicyObject(condition) || !onlyKnownFields(condition, POLICY_CONDITION_FIELDS)) throw invalidPolicy(`${at} invalid`);
       if (!policyNonEmpty(condition.field) || !allowedFields.has(condition.field)) throw invalidPolicy(`${at}.field invalid`);
+      if (POLICY_UNSUPPORTED_CONDITION_OPERATORS.has(condition.operator)) throw invalidPolicy(`${at}.operator ${condition.operator} is not supported by the policy bytecode compiler`);
       if (!POLICY_CONDITION_OPERATORS.has(condition.operator)) throw invalidPolicy(`${at}.operator invalid`);
       const literal = policyLiteral(condition.value);
       if (!literal.ok) throw invalidPolicy(`${at}.value invalid`);
@@ -1452,7 +1493,6 @@ function validatePolicyDefinition(policy, allowedEventFields) {
       if (!literal.ok) throw invalidPolicy(`${at}.value invalid`);
       return { constraint_id: constraint.constraint_id, type: constraint.type, value: literal.value };
     });
-    if (rule.effect === "CONDITIONAL" && constraints.length === 0) throw invalidPolicy(`rules[${ruleIndex}] CONDITIONAL needs a constraint`);
     return { rule_id: rule.rule_id, effect: rule.effect, conditions, constraints, priority: rule.priority };
   });
   const seenPriorities = new Set();

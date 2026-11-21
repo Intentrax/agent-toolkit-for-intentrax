@@ -96,9 +96,10 @@ The adapter names come from `npx @intentrax/sdk init`.
 
   An stdio server whose entry file is in the repository is linked to its
   source. The scan follows `node path`, `tsx path`, `python -m pkg.mod` and
-  `uv --directory d run file.py`, maps `dist/` to `src/`, and follows relative
-  imports 3 levels deep. That server's tools then carry its config's
-  credentials.
+  `uv --directory d run file.py`, maps `dist/` to `src/`, and follows imports
+  3 levels deep: JS/TS relative imports and `require`, and Python
+  `from .mod import x`, `from . import mod` (submodules) and
+  `import pkg.mod`. That server's tools then carry its config's credentials.
 
   A server whose code is not in the repository (an npm package, a docker image,
   or a remote URL) becomes a single action. It is classified by the words in
@@ -157,7 +158,17 @@ A tool counts as gated when one of these sits in front of it:
 - a Claude Code `PreToolUse` hook whose matcher covers the tool and whose
   command runs Intentrax or an approval step;
 - a Claude Code `permissions.ask` rule;
-- a Cursor `beforeMCPExecution` or `beforeShellExecution` hook.
+- a Cursor `beforeMCPExecution` or `beforeShellExecution` hook;
+- **a gate in another file**, one import away. Checked only for consequential
+  actions, and labelled `crossFile` with the file named in the reason:
+  - the handler calls a function imported from a file that contains an
+    Intentrax call or an approval step (`guarded(...)`, `@guarded`,
+    `approvals.require(...)`) before the side effect. A wrapper called after
+    the side effect does not count. A call elsewhere in the tool's file counts
+    only when it is outside every tool handler (a shared dispatcher), so one
+    gated tool does not make its neighbours look gated;
+  - a file that imports the tool's file, uses what it imports, and contains an
+    Intentrax call or an approval step (assumed to dispatch its tools).
 
 A tool matched by `permissions.deny` is listed but not reported.
 
@@ -171,10 +182,13 @@ to a confirmation step (`confirmThenReport`, `readBack`, AWS waiters,
   `delete_draft` may be harmless.
 - **Credential breadth is inferred from names only.** The scan cannot see a
   token's real scopes.
-- **What it cannot see:** a server whose code is outside the repository, tools
-  registered dynamically, and dispatchers in another file.
-- **No cross-file guarantee.** A gate in a different file from the tool is not
-  linked, so the tool may be reported as UNGATED.
+- **What it cannot see:** a server whose code is outside the repository, and
+  tools registered dynamically.
+- **Cross-file gates are one import deep and name-based.** A gate two imports
+  away, or reached through a re-export or dependency injection, is not linked,
+  so the tool may be reported as UNGATED. In the other direction, a gate file
+  that admits only some of the actions it wraps or dispatches still marks them
+  all as gated; read the reason before trusting it.
 - **Config the scan never reads:**
   - client settings outside the project, such as user-level Claude or Cursor
     config;
@@ -200,6 +214,8 @@ The fixture projects live in `test/fixtures/`:
 | `clean` | Read-only tools. |
 | `shared-credential` | One token serving read and destructive tools. |
 | `shell` | An auto-approved Bash tool and a denied server. |
+| `cross-file` | Gates in other files: an imported wrapper before the effect, one called after it, an importing dispatcher, and an importer with no gate. |
+| `py-package` | A Python MCP server whose tools live in a submodule reached by `from . import tools`, one gated by an imported approval step. |
 
 The tests also check that no fixture secret value or server URL ever appears
 in text or JSON output.

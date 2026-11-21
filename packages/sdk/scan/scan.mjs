@@ -12,7 +12,7 @@ import { extractTools, relativeImports } from "./extract.mjs";
 import { classifyAction } from "./classify.mjs";
 import { credentialBreadth, envReadsIn, scopedAlternative } from "./credentials.mjs";
 import { parseConfig, configKind, claudeRuleMatches, claudeMatcherMatches } from "./configs.mjs";
-import { assessGate, assessReadBack, hookCommandKind } from "./gates.mjs";
+import { assessCrossFileGate, assessGate, assessReadBack, gateKindIn, hookCommandKind } from "./gates.mjs";
 import { makeLineIndex, toPosix } from "./text.mjs";
 
 export const SCAN_NOTE = "Heuristic, static scan. It can miss actions and misclassify names.";
@@ -131,6 +131,47 @@ export function scanProject(dir = ".", options = {}) {
     return textCache.get(rel);
   };
 
+  // Import graph, built lazily: what a file imports, and who imports it.
+  const importCache = new Map();
+  const importsOf = (file, base = "") => {
+    const key = `${base}\u0000${file}`;
+    if (!importCache.has(key)) {
+      const text = read(file);
+      const isPy = /\.py$/.test(file);
+      const links = text == null ? [] : relativeImports(text, isPy).flatMap((imp) => resolveImport(file, imp, fileSet, base));
+      importCache.set(key, links);
+    }
+    return importCache.get(key);
+  };
+  let importerIndex = null;
+  const importersOf = (file) => {
+    if (!importerIndex) {
+      importerIndex = new Map();
+      for (const f of files.filter((x) => x.isSource)) {
+        for (const link of importsOf(f.rel)) {
+          if (!importerIndex.has(link.file)) importerIndex.set(link.file, []);
+          importerIndex.get(link.file).push({ file: f.rel, bindings: link.bindings, namespace: link.namespace });
+        }
+      }
+    }
+    return importerIndex.get(file) ?? [];
+  };
+  const gateKindCache = new Map();
+  const gateKindOf = (file) => {
+    if (!gateKindCache.has(file)) gateKindCache.set(file, gateKindIn(read(file)));
+    return gateKindCache.get(file);
+  };
+  // Gate evidence in other files for a tool file (one level each way).
+  const crossFileLinks = (file) => {
+    const imports = importsOf(file)
+      .filter((l) => gateKindOf(l.file))
+      .map((l) => ({ ...l, kind: gateKindOf(l.file) }));
+    const importers = importersOf(file)
+      .filter((imp) => gateKindOf(imp.file) && usesImport(read(imp.file), imp))
+      .map((imp) => ({ file: imp.file, kind: gateKindOf(imp.file) }));
+    return { imports, importers };
+  };
+
   // 1. Agent-client configuration.
   const servers = [];
   const claudeByRoot = new Map();
@@ -183,15 +224,7 @@ export function scanProject(dir = ".", options = {}) {
       seen.add(file);
       const text = read(file);
       if (text == null || depth >= 3) continue;
-      const isPy = /\.py$/.test(file);
-      for (const imp of relativeImports(text, isPy)) {
-        for (const cand of importVariants(file, imp.module, isPy, s.root)) {
-          if (fileSet.has(cand)) {
-            queue.push({ file: cand, depth: depth + 1 });
-            break;
-          }
-        }
-      }
+      for (const link of importsOf(file, s.root)) queue.push({ file: link.file, depth: depth + 1 });
     }
     s.sourceFiles = [...seen];
     for (const file of seen) {
@@ -207,9 +240,20 @@ export function scanProject(dir = ".", options = {}) {
     const lineOf = makeLineIndex(fileText);
     const fileCreds = envReadsIn(fileText).map((r) => ({ name: r.name, refersTo: null, inline: false, file, line: lineOf(r.index), origin: "read in the same file" }));
     const linked = linkedFiles.get(file) ?? [null];
+    let links = null;
+    let outsideText = null;
     for (const t of tools) {
       const spanText = t.spans.map((s) => fileText.slice(s.start, s.end)).join("\n");
       const spanCreds = t.spans.flatMap((s) => envReadsIn(fileText, s.start, s.end)).map((r) => ({ name: r.name, refersTo: null, inline: false, file, line: lineOf(r.index), origin: "read in the tool handler" }));
+      const classification = classifyAction({ name: t.name, description: t.description, body: spanText, annotations: t.annotations });
+      let codeGate = assessGate(spanText, fileText);
+      // Gates elsewhere matter only for consequential actions.
+      if (!codeGate.gated && classification.consequential) {
+        links = links ?? crossFileLinks(file);
+        outsideText = outsideText ?? blankSpans(fileText, tools.flatMap((x) => x.spans));
+        const cross = assessCrossFileGate(spanText, outsideText, links);
+        codeGate = cross.gated ? cross : { ...codeGate, reasons: [...codeGate.reasons, ...cross.reasons] };
+      }
       for (const server of linked) {
         actions.push({
           name: t.name,
@@ -219,10 +263,10 @@ export function scanProject(dir = ".", options = {}) {
           line: t.line,
           server: server ? { name: server.name, configFile: server.configFile, line: server.line, client: server.client, root: server.root } : null,
           client: server?.client ?? null,
-          classification: classifyAction({ name: t.name, description: t.description, body: spanText, annotations: t.annotations }),
+          classification: structuredClone(classification),
           annotations: t.annotations,
           credentials: dedupeCreds([...(server?.credentials ?? []).map((c) => ({ ...c, contextText: server.configText })), ...spanCreds, ...fileCreds].map((c) => ({ ...c, contextText: c.contextText ?? fileText }))),
-          codeGate: assessGate(spanText, fileText),
+          codeGate: structuredClone(codeGate),
           readBack: assessReadBack(spanText),
           handlerVisible: true,
           notes: [],
@@ -528,6 +572,20 @@ function mergeClaude(a, b) {
   };
 }
 
+// The file with every tool span replaced by spaces (offsets kept).
+function blankSpans(text, spans) {
+  let out = text;
+  for (const sp of spans) out = out.slice(0, sp.start) + " ".repeat(Math.max(0, sp.end - sp.start)) + out.slice(sp.end);
+  return out;
+}
+
+// The importer refers to what it imported somewhere besides the import itself.
+function usesImport(text, imp) {
+  if (!text) return false;
+  const names = [...(imp.bindings ?? []), ...(imp.namespace ? [imp.namespace] : [])];
+  return names.some((n) => (text.match(new RegExp(`(?<![\\w$.])${n.replace(/\$/g, "\\$")}(?![\\w$])`, "g")) ?? []).length >= 2);
+}
+
 function norm(p) {
   const n = posix.normalize(toPosix(p)).replace(/^\.\//, "");
   return n === "." ? "" : n;
@@ -557,15 +615,49 @@ function importVariants(fromFile, mod, isPy, serverRoot) {
     for (const ext of [".ts", ".js", ".mjs"]) out.push(`${target}/index${ext}`);
     return out;
   }
-  let base;
+  const base = pyModuleBase(fromFile, mod, serverRoot);
+  return base == null ? [] : [`${base}.py`, `${base}/__init__.py`];
+}
+
+// Python module path without extension. A relative module resolves against
+// the importing file; an absolute one against the server root and, failing
+// that, the importing file's directory (scripts run from their own folder).
+function pyModuleBase(fromFile, mod, root) {
+  const dir = posix.dirname(fromFile);
   if (mod.startsWith(".")) {
     const dots = mod.match(/^\.+/)[0].length;
     let d = dir;
     for (let i = 1; i < dots; i += 1) d = posix.dirname(d);
-    base = posix.join(d, mod.slice(dots).replace(/\./g, "/"));
-  } else {
-    base = posix.join(serverRoot || ".", mod.replace(/\./g, "/"));
+    return norm(posix.join(d, mod.slice(dots).replace(/\./g, "/")));
   }
-  base = norm(base);
-  return [`${base}.py`, `${base}/__init__.py`];
+  return norm(posix.join(root || ".", mod.replace(/\./g, "/")));
+}
+
+// Files an import resolves to, each with the local names that refer to it.
+// Python `from . import queries` resolves the submodule `queries.py` too, with
+// `queries` acting as a namespace for it.
+function resolveImport(fromFile, imp, fileSet, root) {
+  const isPy = /\.py$/.test(fromFile);
+  const out = [];
+  const pick = (cands, link) => {
+    const hit = cands.find((c) => fileSet.has(c) && c !== fromFile);
+    if (hit) out.push({ file: hit, ...link });
+  };
+  if (!isPy) {
+    pick(importVariants(fromFile, imp.module, false, root), { bindings: imp.bindings ?? [], namespace: imp.namespace ?? null });
+    return out;
+  }
+  const roots = [...new Set([root || "", posix.dirname(fromFile)])];
+  for (const r of imp.module.startsWith(".") ? [root || ""] : roots) {
+    const base = pyModuleBase(fromFile, imp.module, r);
+    if (base == null) continue;
+    const before = out.length;
+    pick([`${base}.py`, `${base}/__init__.py`], { bindings: imp.bindings ?? [], namespace: imp.namespace ?? null });
+    (imp.bindings ?? []).forEach((local, i) => {
+      const name = imp.submodules?.[i];
+      if (name) pick([`${base ? `${base}/` : ""}${name}.py`, `${base ? `${base}/` : ""}${name}/__init__.py`], { bindings: [], namespace: local });
+    });
+    if (out.length > before) break;
+  }
+  return out;
 }

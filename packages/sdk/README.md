@@ -37,7 +37,7 @@ Public surfaces:
   own) and offline verification with ephemeral local keys, no account and no
   network. Verdicts are capped at `LOCAL_NON_TRUST_BEARING`: never production
   assurance. See [sandbox/README.md](sandbox/README.md) for the limitations.
-- `intentrax scan [dir]` (1.8.0) lists the destructive or consequential actions
+- `intentrax scan [dir]` (1.8.0; gates across files in 1.8.1) lists the destructive or consequential actions
   an agent can reach in a project and flags broad credentials, missing gates
   and success reported without a read-back. Heuristic and static: nothing is
   run or sent. See [scan/README.md](scan/README.md).

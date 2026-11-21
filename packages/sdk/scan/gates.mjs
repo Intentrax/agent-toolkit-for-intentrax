@@ -87,6 +87,73 @@ export function mentionsIntentraxGate(text) {
   return INTENTRAX_GATE.test(text);
 }
 
+// The kind of gate a file contains anywhere, or null.
+export function gateKindIn(text) {
+  if (!text) return null;
+  if (INTENTRAX_GATE.test(text)) return "intentrax";
+  if (APPROVAL_GATE.test(text)) return "approval";
+  return null;
+}
+
+function escapeRe(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Calls (or Python decorators) of a name imported from a gate file:
+// `guard(`, `@guard`, `gate.admit(`, `@gate.guarded`. With
+// `decorators: false`, decorators are excluded: a decorator wraps one function,
+// so it is never evidence of a shared dispatcher.
+function importedCallRe(link, { decorators = true } = {}) {
+  const alts = [];
+  const notAfter = decorators ? "(?<![.\\w$])" : "(?<![.\\w$@])";
+  for (const b of link.bindings ?? []) {
+    alts.push(`${notAfter}${escapeRe(b)}\\s*\\(`);
+    if (decorators) alts.push(`@${escapeRe(b)}\\b`);
+  }
+  if (link.namespace) {
+    alts.push(`${notAfter}${escapeRe(link.namespace)}\\s*\\.\\s*[A-Za-z_$][\\w$]*\\s*\\(`);
+    if (decorators) alts.push(`@${escapeRe(link.namespace)}\\.`);
+  }
+  return alts.length ? new RegExp(alts.join("|")) : null;
+}
+
+const GATE_WORDS = { intentrax: "an Intentrax admission/execute call", approval: "an approval step" };
+
+// Gates in another file (heuristic). Used only when `assessGate` found none.
+// - `imports`: files this tool's file imports that contain a gate, each
+//   `{ file, kind, bindings, namespace }`. The tool counts as gated when its
+//   handler calls a name imported from such a file before the side effect, or
+//   (assumed shared dispatcher) when its file calls one outside every tool
+//   handler. `outsideText` is the file with all tool spans blanked, so a call
+//   in another tool's handler does not gate this one.
+// - `importers`: files that import this tool's file, contain a gate and use
+//   what they import, each `{ file, kind }` (assumed to dispatch its tools).
+export function assessCrossFileGate(spanText, outsideText, { imports = [], importers = [] } = {}) {
+  const effects = sideEffectsIn(spanText);
+  const effectAt = effects.length ? Math.min(...effects.map((e) => e.index)) : -1;
+  const reasons = [];
+  for (const link of imports) {
+    const re = importedCallRe(link);
+    if (!re) continue;
+    const at = firstIndex(re, spanText);
+    if (at >= 0 && !(effectAt >= 0 && at > effectAt)) {
+      return { gated: true, kind: link.kind, heuristic: true, crossFile: true, reasons: [`handler calls a wrapper imported from ${link.file}, which contains ${GATE_WORDS[link.kind]}, before acting`] };
+    }
+    if (at >= 0) {
+      reasons.push(`a wrapper imported from ${link.file} is called after the side effect in the handler, so it does not gate it`);
+      continue;
+    }
+    const shared = importedCallRe(link, { decorators: false });
+    if (outsideText && shared && shared.test(outsideText)) {
+      return { gated: true, kind: link.kind, heuristic: true, crossFile: true, reasons: [`this file calls a wrapper imported from ${link.file}, which contains ${GATE_WORDS[link.kind]} (assumed to be a shared dispatcher)`] };
+    }
+  }
+  for (const imp of importers) {
+    return { gated: true, kind: imp.kind, heuristic: true, crossFile: true, reasons: [`${imp.file} imports this file and contains ${GATE_WORDS[imp.kind]} (assumed to dispatch its tools)`] };
+  }
+  return { gated: false, kind: null, heuristic: true, reasons };
+}
+
 export function hookCommandKind(command) {
   if (/intentrax/i.test(command)) return "intentrax";
   if (/approv|gate|guard|policy|confirm|deny|block|allowlist|permission/i.test(command)) return "approval";

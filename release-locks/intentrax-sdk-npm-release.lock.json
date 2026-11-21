@@ -1,10 +1,10 @@
 {
   "$schema": "intentrax://schemas/verification/typescript-sdk/npm-release-lock",
   "release_id": "typescript-sdk-npm-release-001",
-  "release_version": "@intentrax/sdk/1.8.0",
+  "release_version": "@intentrax/sdk/1.8.1",
   "sdk_contract_version": "intentrax-public-sdk-contract/1.0",
   "package_name": "@intentrax/sdk",
-  "package_version": "1.8.0",
+  "package_version": "1.8.1",
   "canonicalization_version": "json-stable-indent/1.0",
   "hash_algorithm": "SHA-256",
   "generator_version": "intentrax-typescript-sdk-release-gen/1.0",
@@ -27,15 +27,15 @@
     "dry_run_only_reason": "source tree stores deterministic npm release evidence only; registry publish and signing must run as controlled release operations outside pull request CI"
   },
   "npm_pack": {
-    "id": "@intentrax/sdk@1.8.0",
+    "id": "@intentrax/sdk@1.8.1",
     "name": "@intentrax/sdk",
-    "version": "1.8.0",
-    "size": 249783,
-    "unpackedSize": 1053495,
-    "shasum": "188066208e57f40e4ff5532bd87f32b419a96599",
-    "integrity": "sha512-MjBJngygnb4d1Ab0JKlCTUfj+YwTQAX7TW7SgilbdvFl1jKB8vQ/stTHNOW2U6DebnD2Z4u3j5dQ57vBoKcbeg==",
-    "tarball_sha256": "0961261e4f69308b413f5a61f46bc463524b9b5be7b33a09fec6ef79cda8b24a",
-    "filename": "intentrax-sdk-1.8.0.tgz",
+    "version": "1.8.1",
+    "size": 255132,
+    "unpackedSize": 1071010,
+    "shasum": "9f44d8f895396fa54c9ed75c022525a4cfa6993b",
+    "integrity": "sha512-1srB0fDJanmn2++1GrinHNCk3EZV+1KHGzVjMOJ/WL78TUwnQ8aLk/LXAzxCZ+/bfzuXKKJoVv521YFurEt2Yw==",
+    "tarball_sha256": "1285585959deb01558e309c03b147a8566419e4b2eb3f5be6ad48a01c8a65e48",
+    "filename": "intentrax-sdk-1.8.1.tgz",
     "files": [
       {
         "path": "LICENSE",
@@ -44,7 +44,7 @@
       },
       {
         "path": "README.md",
-        "size": 21420,
+        "size": 21449,
         "mode": 420
       },
       {
@@ -144,12 +144,12 @@
       },
       {
         "path": "index.js",
-        "size": 85808,
+        "size": 88011,
         "mode": 420
       },
       {
         "path": "index.ts",
-        "size": 85808,
+        "size": 88011,
         "mode": 420
       },
       {
@@ -394,7 +394,7 @@
       },
       {
         "path": "scan/README.md",
-        "size": 10036,
+        "size": 11392,
         "mode": 420
       },
       {
@@ -419,12 +419,12 @@
       },
       {
         "path": "scan/extract.mjs",
-        "size": 15040,
+        "size": 19034,
         "mode": 420
       },
       {
         "path": "scan/gates.mjs",
-        "size": 5641,
+        "size": 9008,
         "mode": 420
       },
       {
@@ -434,7 +434,7 @@
       },
       {
         "path": "scan/scan.mjs",
-        "size": 25328,
+        "size": 29691,
         "mode": 420
       },
       {
@@ -483,7 +483,7 @@
     {
       "path": "sdk/adoption/pb-a5-003-006-beta-acceptance.v1.json",
       "role": "adoption_acceptance_lock",
-      "sha256": "4cbcb7787505186af7b160f563e9e6cec3f09b454e4a7efa5634be6bf4875cb4",
+      "sha256": "7dfa14def67078923649bd4bb0b52e25ca7265167f12aaa5dbda534da87cef2f",
       "bytes": 14791
     },
     {
@@ -537,20 +537,20 @@
     {
       "path": "sdk/typescript/README.md",
       "role": "npm_package_documentation",
-      "sha256": "3283d63fd375f99045d6bb0a9021e2c740ff096b351aa34c911f806ebf2b1eb8",
-      "bytes": 21420
+      "sha256": "2f336cba4e53b82632a9091f1a7e77972f4993c50ab48ac10a8ef4ae9be5916f",
+      "bytes": 21449
     },
     {
       "path": "sdk/typescript/cli/intentrax.mjs",
       "role": "npm_package_cli",
-      "sha256": "15d6f512d4e93ea1e411f258c2c8d3114d99447cdc5568173081ef6e59f4932f",
+      "sha256": "75fd96c5cf4989da1c6e78b7c0f793b0e370026e0921e1b748d59576e323938c",
       "bytes": 156102
     },
     {
       "path": "sdk/typescript/conformance.test.mjs",
       "role": "npm_package_conformance_tests",
-      "sha256": "db4d9b987235b5b154701e5851cce1a771776d8e27d1057be3d5f7c9aa976092",
-      "bytes": 119247
+      "sha256": "cc3d584eefe7fd1649aa7ec6817a9d88bf317ec3e412cbcb843edcb3c9649e6b",
+      "bytes": 119329
     },
     {
       "path": "sdk/typescript/examples/adapters/claude-code.md",
@@ -627,14 +627,14 @@
     {
       "path": "sdk/typescript/index.js",
       "role": "npm_package_runtime",
-      "sha256": "0e0fa4ff5db89ef57a3cdba660e2b4c132ad431bb92197a3f0f412989b9b8a80",
-      "bytes": 85808
+      "sha256": "58cf5a643a6591430b9fa23f0858aacf465753f1881942f9de1fe4a78e5b4076",
+      "bytes": 88011
     },
     {
       "path": "sdk/typescript/index.ts",
       "role": "npm_package_source",
-      "sha256": "0e0fa4ff5db89ef57a3cdba660e2b4c132ad431bb92197a3f0f412989b9b8a80",
-      "bytes": 85808
+      "sha256": "58cf5a643a6591430b9fa23f0858aacf465753f1881942f9de1fe4a78e5b4076",
+      "bytes": 88011
     },
     {
       "path": "sdk/typescript/live-runtime.test.mjs",
@@ -645,13 +645,13 @@
     {
       "path": "sdk/typescript/package-lock.json",
       "role": "npm_install_lock",
-      "sha256": "d65db5d60d198442aacd0fba88fc0120e0947fafda07e3ebf01d49546eb52fab",
+      "sha256": "df19ffe69f57db68c304077d55ffcccd114365212234e1cab7a8aa05583138d8",
       "bytes": 338
     },
     {
       "path": "sdk/typescript/package.json",
       "role": "npm_package_manifest",
-      "sha256": "69b14dcabb654915cac903fbf37578ecf0edca09dcc0df39f0a9019870b761a9",
+      "sha256": "eb22f8c05c7915a82cf0a5d1acb37b3cd6ab00c40d8218e1fe56fb1483108bd5",
       "bytes": 1725
     },
     {
@@ -661,5 +661,5 @@
       "bytes": 10208
     }
   ],
-  "release_hash": "f6181054c90dcab03aa619a7f8f48c7da62a23e9ee93a890ce5c028a42dfd612"
+  "release_hash": "a08bf26c66fc1526ee731cb60642fe04b6c0a59501dd7b924af637966dc8db6d"
 }
