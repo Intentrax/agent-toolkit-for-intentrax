@@ -46,6 +46,11 @@ Public surfaces:
   success (`CONFIRMED`, `CAUGHT …`, `PENDING`, `UNKNOWN`). Results are
   `SELF_REPORTED`, not an Intentrax attestation. See
   [readback/README.md](readback/README.md).
+- `intentrax verify-proof ... --tlog-trust <doc> [--tlog-bundle <bundle>]` and
+  `@intentrax/sdk/tlog` (1.9.0): opt-in transparency-log inclusion checks
+  against a trust document you pin (log key, witness keys, quorum). No log is
+  published yet and none is bundled; without `--tlog-trust` nothing changes.
+  See [tlog/README.md](tlog/README.md).
 - `intentrax mcp pin|check|proxy` and `@intentrax/sdk/mcp` (1.8.0) pin a
   third-party MCP server's tool definitions, report changes (exit 10,
   `CHANGED …`) and block changed or new tools in a stdio proxy. Offline; tool

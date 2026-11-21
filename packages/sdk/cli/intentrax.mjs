@@ -3,9 +3,9 @@ import { createHash, createPublicKey, verify as verifySignatureBytes } from "nod
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { buildAgentGatewayAdmissionEnvelope, buildLegacyVerificationAssessment, compilePolicyDocument, evaluateCompiledPolicy, policyReevaluationMismatches } from "../index.js";
+import { buildAgentGatewayAdmissionEnvelope, buildLegacyVerificationAssessment, compilePolicyDocument, deriveAssuranceVerdict, evaluateCompiledPolicy, policyReevaluationMismatches } from "../index.js";
 
-const VERSION = "1.8.1";
+const VERSION = "1.9.0";
 const ADMISSION_SCHEMA_VERSION = "intentrax.runtime.agent_admission_request/1.0";
 const INIT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_init/1.0";
 const ACTION_RECEIPT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_action_receipt/1.0";
@@ -287,20 +287,30 @@ async function main(argv) {
   }
   if (command === "verify-proof") {
     const options = parseVerifyProofOptions(rest);
+    // The transparency-log module loads only with --tlog-trust, so copies of
+    // this CLI without tlog/ (the console's vendored verifier) keep working.
+    if (options.tlogTrust !== "") {
+      options.tlogModule = await import("../tlog/index.mjs");
+    }
     const output = verifyProofExportCommand(subject, options);
     const exitCode = output.status === "PASS" || output.status === "SANDBOX_NON_TRUST_BEARING" ? 0 : SIGNER_TRUST_EXIT_CODE;
     if (options.json) {
       console.log(JSON.stringify(output, null, 2));
     } else if (output.status === "PASS") {
-      console.log(`Intentrax proof export verification PASS: proof=${output.registry_entry_id} signer=TRUSTED report=${output.report_path} hash=${output.report_hash}`);
+      console.log(`Intentrax proof export verification PASS: proof=${output.registry_entry_id} signer=TRUSTED report=${output.report_path} hash=${output.report_hash}${transparencySuffix(output)}`);
     } else if (output.status === "SANDBOX_NON_TRUST_BEARING") {
-      console.log(`Intentrax proof export verification: SANDBOX — not trust-bearing. Integrity and ed25519 signatures check out, and the signers are published sandbox keys. This shows the verification mechanics, not production assurance. proof=${output.registry_entry_id} report=${output.report_path}`);
+      console.log(`Intentrax proof export verification: SANDBOX — not trust-bearing. Integrity and ed25519 signatures check out, and the signers are published sandbox keys. This shows the verification mechanics, not production assurance. proof=${output.registry_entry_id} report=${output.report_path}${transparencySuffix(output)}`);
     }
     if (!options.json) {
       console.log(assessmentTable(output.verification_assessment));
     }
     if (exitCode !== 0) {
-      console.error(signerTrustMessage(output));
+      if (output.transparency?.status === "FAILED") {
+        console.error(transparencyFailureMessage(output));
+      }
+      if (output.signer_trust !== "TRUSTED" && output.signer_trust !== "SANDBOX_NON_TRUST_BEARING") {
+        console.error(signerTrustMessage(output));
+      }
     }
     return exitCode;
   }
@@ -1102,6 +1112,8 @@ function parseVerifyProofOptions(args) {
     reportOut: ".intentrax/offline-proof-verification.report.json",
     trustedKeys: [],
     policyDocuments: [],
+    tlogTrust: "",
+    tlogBundle: "",
   };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -1113,9 +1125,16 @@ function parseVerifyProofOptions(args) {
       options.trustedKeys.push(requireValue(args, ++index, arg));
     } else if (arg === "--policy-document") {
       options.policyDocuments.push(requireValue(args, ++index, arg));
+    } else if (arg === "--tlog-trust") {
+      options.tlogTrust = requireValue(args, ++index, arg);
+    } else if (arg === "--tlog-bundle") {
+      options.tlogBundle = requireValue(args, ++index, arg);
     } else {
       fail(`unknown option: ${arg}`);
     }
+  }
+  if (options.tlogBundle !== "" && options.tlogTrust === "") {
+    fail("--tlog-bundle needs --tlog-trust: a bundle is only checked against a pinned transparency-log trust document");
   }
   return options;
 }
@@ -1153,7 +1172,8 @@ function verifyProofExportCommand(proofExportPath, options) {
   const proofExport = parseSingleJSON(source, "proof export");
   const keySets = loadPublishedKeySets(options.trustedKeys);
   const policyDocuments = options.policyDocuments.map((path) => readFileSync(resolve(path), "utf8"));
-  const report = buildLocalProofVerificationReport(proofExport, resolvedProofExportPath, resolve(options.reportOut), keySets, policyDocuments);
+  const transparency = loadTransparencyInputs(options);
+  const report = buildLocalProofVerificationReport(proofExport, resolvedProofExportPath, resolve(options.reportOut), keySets, policyDocuments, transparency);
   const reportData = JSON.stringify(report, null, 2) + "\n";
   mkdirSync(dirname(resolve(options.reportOut)), { recursive: true });
   writeFileSync(resolve(options.reportOut), reportData, { mode: 0o600 });
@@ -1221,7 +1241,57 @@ function buildLocalPDFReceiptVerificationReport(bytes, pdfPath, reportPath, expe
   });
 }
 
-function buildLocalProofVerificationReport(proofExport, proofExportPath, reportPath, keySets, policyDocuments = []) {
+// Transparency-log inclusion (R7, rollout step 2): opt-in with --tlog-trust,
+// mirroring the Go offline verifier (offlineproof/transparency.go). Returns
+// null when no trust document was given, so the report is unchanged.
+function loadTransparencyInputs(options) {
+  if (options.tlogTrust === "") {
+    return null;
+  }
+  const trustDocument = readFileSync(resolve(options.tlogTrust), "utf8");
+  if (containsForbiddenPrivateMarker(trustDocument)) {
+    fail("transparency-log trust document contains private material marker");
+  }
+  const bundle = options.tlogBundle === "" ? null : readFileSync(resolve(options.tlogBundle), "utf8");
+  return { trustDocument, bundle, tlog: options.tlogModule };
+}
+
+// The transparency block for the record hash the verifier recomputed. A
+// malformed trust document fails closed; a malformed bundle is a FAILED
+// result in the report.
+function buildTransparencyReport(proofRecordHash, transparency) {
+  try {
+    return transparency.tlog.transparencyReport({ proofRecordHash, trustDocument: transparency.trustDocument, bundle: transparency.bundle });
+  } catch (error) {
+    fail(`transparency-log trust document invalid: ${stableErrorMessage(error)}`);
+  }
+}
+
+// Appends the optional TRANSPARENCY row after the fixed dimensions and
+// re-derives the verdict over every row. No profile requires the row, so it
+// can lower a verdict (FAILED) but never raise one.
+function withTransparencyAssessment(assessment, tr, tlogModule) {
+  const row = tlogModule.transparencyAssessment(tr);
+  const assessments = [...assessment.assessments, row];
+  const results = Object.fromEntries(assessments.map((a) => [a.dimension, a.result]));
+  return {
+    ...assessment,
+    verdict: deriveAssuranceVerdict(results, assessment.assurance_profile),
+    assessments,
+    limitations: [...assessment.limitations, ...row.limitations.map((code) => ({ code, text: tlogModule.TRANSPARENCY_LIMITATION_TEXT[code] }))],
+  };
+}
+
+function transparencySuffix(report) {
+  return report.transparency ? ` transparency=${report.transparency.status}` : "";
+}
+
+function transparencyFailureMessage(report) {
+  const codes = report.transparency.reasons.map((reason) => reason.code).join(",");
+  return `intentrax: the transparency-log inclusion bundle did not verify against the pinned trust document (${codes}); this proof is NOT shown to be in the log and the bundle must not be relied on.`;
+}
+
+function buildLocalProofVerificationReport(proofExport, proofExportPath, reportPath, keySets, policyDocuments = [], transparency = null) {
   const invalid = validateProofLookupExport(proofExport);
   if (invalid.length > 0) {
     fail(`proof export verification failed closed: ${invalid.join(",")}`);
@@ -1242,6 +1312,11 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
   // Re-run the sealed evaluation (P1-C step 2); a disagreement fails closed.
   const policyReevaluation = reevaluateSealedPolicyBinding(record.canonical_aep_json, policyBinding.binding, policyDocuments);
   const trust = classifySignerTrust(signatures.signers, keySets);
+  const tlog = transparency === null ? null : buildTransparencyReport(record.record_hash, transparency);
+  const legacyAssessment = buildLegacyVerificationAssessment({ signerTrust: trust.signer_trust, keySetSupplied: keySets.length > 0, policyBinding: policyBinding.binding, policyReevaluation });
+  // A FAILED transparency check is never hidden: status names it and the
+  // exit code is non-zero, whatever the signer outcome.
+  const signerStatus = trust.signer_trust === "TRUSTED" ? "PASS" : trust.signer_trust;
   const withoutHash = {
     schema_version: LOCAL_PROOF_VERIFICATION_SCHEMA_VERSION,
     verifier_version: LOCAL_PROOF_VERIFIER_VERSION,
@@ -1249,7 +1324,7 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
     // min_trusted_signers distinct trusted keys signed. Valid signatures from
     // keys you have not chosen to trust prove nothing about who signed, so they
     // never yield PASS.
-    status: trust.signer_trust === "TRUSTED" ? "PASS" : trust.signer_trust,
+    status: tlog !== null && tlog.status === "FAILED" ? "TRANSPARENCY_FAILED" : signerStatus,
     signer_trust: trust.signer_trust,
     trust_bearing: trust.signer_trust === "TRUSTED",
     signature_verification: {
@@ -1310,7 +1385,10 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
     // profile, per-dimension results, verdict by the fixed rule,
     // machine-readable limitations). status, signer_trust and the exit code
     // are unchanged. Covered by report_hash.
-    verification_assessment: buildLegacyVerificationAssessment({ signerTrust: trust.signer_trust, keySetSupplied: keySets.length > 0, policyBinding: policyBinding.binding, policyReevaluation }),
+    verification_assessment: tlog === null ? legacyAssessment : withTransparencyAssessment(legacyAssessment, tlog, transparency.tlog),
+    // Present only with --tlog-trust: transparency-log inclusion of this
+    // record (VERIFIED, VERIFIED_UNWITNESSED, NOT_PRESENT or FAILED).
+    ...(tlog === null ? {} : { transparency: tlog }),
     report_hash: "",
   };
   return Object.freeze({
@@ -3014,7 +3092,7 @@ function printHelp() {
 Usage:
   intentrax init <adapter> [--dry-run] [--force] [--json] [--output-dir <dir>] [--base-url <url>] [--tenant-id <tenant>]
   intentrax check-init --output-dir <dir> [--json]
-  intentrax verify-proof <proof-export.json> [--trusted-keys <key-set.json>] [--policy-document <policy.json>] [--json] [--report-out <file>]
+  intentrax verify-proof <proof-export.json> [--trusted-keys <key-set.json>] [--policy-document <policy.json>] [--tlog-trust <transparency-log.json> [--tlog-bundle <proof.tlog.json>]] [--json] [--report-out <file>]
   intentrax verify-pdf-receipt <receipt.pdf> --pdf-hash <X-Intentrax-PDF-Hash> [--json] [--report-out <file>]
   intentrax sandbox [--scenario confirmed|contradicted] [--check <read-only-check.mjs>] [--dir <dir>] [--json]
   intentrax sandbox verify <bundle.json> [--keys <local-key-set.json>] [--issuer-keys <pinned-external-issuers.json>] [--require-external-issuer <issuer>]... [--json]
@@ -3080,6 +3158,15 @@ Proof export verification:
   EXECUTION_NOT_ATTESTED, EFFECT_NOT_VERIFIED, POLICY_BINDING_SYNTHETIC and
   COMPLETENESS_NOT_ESTABLISHED are always listed. The exit code does not
   depend on the assessment.
+
+  Transparency-log inclusion is opt-in: --tlog-trust pins a transparency-log
+  trust document (intentrax.trust.transparency_log/0: log key, witness keys,
+  quorum; none is bundled while no log is published) and --tlog-bundle gives
+  this proof's inclusion bundle (intentrax.tlog.inclusion-bundle/v0). The
+  report then carries a transparency block and a TRANSPARENCY row: VERIFIED,
+  VERIFIED_UNWITNESSED, NOT_PRESENT (no bundle: the record is not shown to be
+  logged; nothing else changes) or FAILED (status TRANSPARENCY_FAILED,
+  non-zero exit). Without --tlog-trust the report is exactly as before.
 
   The SDK ships the production key set (trust/production-key-set.json,
   min_trusted_signers 2) and the sandbox key set (trust/sandbox-key-set.json).

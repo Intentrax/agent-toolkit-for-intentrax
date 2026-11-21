@@ -12,6 +12,11 @@
 
 import { Worker } from "node:worker_threads";
 
+// Worker exit codes that mean "never answered" rather than "failed":
+// 13 = unsettled top-level await (the worker awaits the check at top level),
+// 0 = clean exit without posting.
+const NO_ANSWER_EXIT_CODES = new Set([0, 13]);
+
 export function runCheckWorker({ href, mode, probe = null, signal = null }) {
   return new Promise((resolve, reject) => {
     if (signal && signal.aborted) {
@@ -33,7 +38,15 @@ export function runCheckWorker({ href, mode, probe = null, signal = null }) {
     }
     worker.once("message", (m) => finish(() => (m && m.ok ? resolve(m.value) : reject(new Error(m && m.error ? m.error : "check failed")))));
     worker.once("error", (err) => finish(() => reject(err)));
-    worker.once("exit", (code) => finish(() => reject(new Error("check worker exited with code " + code))));
+    worker.once("exit", (code) => {
+      // A check whose promise never settles and holds nothing open lets the
+      // worker exit without answering (code 13: unsettled top-level await).
+      // That is "no result", not an error: keep waiting so the caller's
+      // timeout reports it, the same on a fast or slow host. Without a signal
+      // there is no timeout to wait for.
+      if (NO_ANSWER_EXIT_CODES.has(code) && signal) return;
+      finish(() => reject(new Error("check worker exited with code " + code)));
+    });
     if (signal) signal.addEventListener("abort", onAbort, { once: true });
   });
 }

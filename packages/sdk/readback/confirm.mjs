@@ -76,6 +76,11 @@ function runModuleWorker({ href, probe, signal = null }) {
   return runReadbackWorker({ kind: "module", href, probe }, signal);
 }
 
+// Worker exit codes that mean "never answered" rather than "failed":
+// 13 = unsettled top-level await (the worker awaits the check at top level),
+// 0 = clean exit without posting.
+const NO_ANSWER_EXIT_CODES = new Set([0, 13]);
+
 function runReadbackWorker(workerData, signal) {
   return new Promise((resolvePromise, reject) => {
     if (signal && signal.aborted) {
@@ -95,7 +100,14 @@ function runReadbackWorker(workerData, signal) {
     }
     worker.once("message", (m) => finish(() => (m && m.ok ? resolvePromise(m.value) : reject(new Error(m && m.error ? m.error : "check failed")))));
     worker.once("error", (err) => finish(() => reject(err)));
-    worker.once("exit", (code) => finish(() => reject(new Error("check worker exited with code " + code))));
+    worker.once("exit", (code) => {
+      // A read whose promise never settles and holds nothing open lets the
+      // worker exit without answering (code 13: unsettled top-level await).
+      // That is "no result", not an error: keep waiting so timeoutMs reports
+      // it (as the sandbox does).
+      if (NO_ANSWER_EXIT_CODES.has(code) && signal) return;
+      finish(() => reject(new Error("check worker exited with code " + code)));
+    });
     if (signal) signal.addEventListener("abort", onAbort, { once: true });
   });
 }
