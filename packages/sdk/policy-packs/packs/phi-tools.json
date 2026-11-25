@@ -1,0 +1,57 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.phi-tools",
+  "pack_version": "0.1.0",
+  "title": "Tools that touch patient health data",
+  "summary": "Asks before every call, read or write, to a tool whose name suggests patient health records (patient, EHR, FHIR, HL7, diagnosis, prescription, clinical). It is not a compliance control and makes no regulatory claim.",
+  "scan": {
+    "category": "write",
+    "rule_ids": ["scan.any"],
+    "name_tokens": ["patient", "patients", "phi", "ehr", "emr", "fhir", "hl7", "diagnosis", "diagnoses", "prescription", "prescriptions", "medication", "medications", "clinical", "medical", "encounter", "encounters", "immunization", "immunizations"]
+  },
+  "params": {},
+  "matchers": [
+    {
+      "matcher_id": "health-data-tool",
+      "tool": {
+        "token_groups": [["patient", "patients", "phi", "ehr", "emr", "fhir", "hl7", "diagnosis", "diagnoses", "prescription", "prescriptions", "medication", "medications", "clinical", "medical", "encounter", "encounters", "immunization", "immunizations"]]
+      },
+      "action": "health.data_access"
+    }
+  ],
+  "actions": {
+    "health.data_access": { "decisions": ["ask"], "why": "Patient health data needs a person's decision every time an agent reads or changes it, and a record of who allowed it." }
+  },
+  "policy": {
+    "policy_id": "intentrax.phi-tools",
+    "policy_version": "0.1.0",
+    "rules": [
+      {
+        "rule_id": "rule.approve-health-data-access",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "health.data_access" }],
+        "constraints": [{ "constraint_id": "constraint.phi-tools.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.phi-tools.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "A clinician or privacy officer allowed to see the record."
+  },
+  "limits": [
+    "This pack is not a compliance control and makes no regulatory claim. It asks a person before a matching tool runs; it does not encrypt, log, minimise or de-identify anything.",
+    "Tools are found by words in their names only. A tool with a neutral name (get_record, query) that returns health data is not matched, and the shell is not covered.",
+    "Approving a call does not decide what the agent may do with the data it gets back."
+  ],
+  "examples": [
+    { "name": "read a patient record", "tool_name": "mcp__ehr__get_patient_record", "tool_input": { "patient_id": "p-1" }, "expect": "ask" },
+    { "name": "FHIR search", "tool_name": "mcp__fhir__search_observations", "tool_input": { "code": "8867-4" }, "expect": "ask" },
+    { "name": "update a prescription", "tool_name": "updatePrescription", "tool_input": { "id": "rx-1", "dose": "5mg" }, "expect": "ask" },
+    { "name": "CRM customer", "tool_name": "mcp__crm__get_customer", "tool_input": { "id": "c-1" }, "expect": "none" },
+    { "name": "issues", "tool_name": "mcp__github__list_issues", "tool_input": {}, "expect": "none" },
+    { "name": "shell is not covered", "tool_name": "Bash", "tool_input": { "command": "cat patients.csv" }, "expect": "none" }
+  ]
+}

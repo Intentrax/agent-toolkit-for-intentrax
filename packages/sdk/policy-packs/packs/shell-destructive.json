@@ -1,0 +1,107 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.shell-destructive",
+  "pack_version": "0.1.0",
+  "title": "Destructive shell commands",
+  "summary": "Blocks shell commands that wipe a whole system or write raw disks (rm -rf /, mkfs, dd to a device) and asks before any recursive delete.",
+  "scan": {
+    "category": "shell",
+    "rule_ids": ["scan.category.shell"]
+  },
+  "params": {},
+  "matchers": [
+    {
+      "matcher_id": "rm-recursive-root",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [
+        { "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])rm\\s+(\\S+\\s+)*?(-[A-Za-z]*[rR][A-Za-z]*|--recursive)(\\s|$)" },
+        { "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])rm\\s[^;&|]*\\s(/|/\\*|~|~/|~/\\*|\\$HOME|\\$HOME/|\\$HOME/\\*|\\$\\{HOME\\}|\\$\\{HOME\\}/)(\\s|$|[;&|])" }
+      ],
+      "action": "shell.wipe_system"
+    },
+    {
+      "matcher_id": "no-preserve-root",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "--no-preserve-root" }],
+      "action": "shell.wipe_system"
+    },
+    {
+      "matcher_id": "remove-item-drive-root",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "Remove-Item\\b[^;&|]*-Recurse[^;&|]*\\s[A-Za-z]:\\\\?(\\s|$)", "regex_flags": "i" }],
+      "action": "shell.wipe_system"
+    },
+    {
+      "matcher_id": "raw-disk-write",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "(^|[^A-Za-z0-9_.-])(mkfs(\\.[a-z0-9]+)?|wipefs|fdisk|sfdisk|parted|diskpart)(\\s|$)|(^|[^A-Za-z0-9_-])dd\\s[^;&|]*\\bof=/dev/|>\\s*/dev/(sd|nvme|hd|vd|xvd|disk|mmcblk)|(^|[^A-Za-z0-9_-])shred\\s[^;&|]*/dev/|\\bFormat-Volume\\b|\\bClear-Disk\\b" }],
+      "action": "shell.raw_disk_write"
+    },
+    {
+      "matcher_id": "recursive-delete",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])rm\\s+(\\S+\\s+)*?(-[A-Za-z]*[rR][A-Za-z]*|--recursive)(\\s|$)|(^|[^A-Za-z0-9_-])find\\s[^;&|]*\\s-delete(\\s|$)|(^|[^A-Za-z0-9_-])git\\s+clean\\s+(\\S+\\s+)*?-[A-Za-z]*f|(^|[^A-Za-z0-9_-])(rmdir|rd)\\s+/s\\b|Remove-Item\\b[^;&|]*-Recurse|(^|[^A-Za-z0-9_-])(shred|srm)\\s" }],
+      "action": "shell.recursive_delete"
+    }
+  ],
+  "actions": {
+    "shell.wipe_system": { "decisions": ["block"], "why": "A recursive delete of /, the home directory or a drive root cannot be undone; run it yourself if you really mean it." },
+    "shell.raw_disk_write": { "decisions": ["block"], "why": "Formatting or writing a raw disk device destroys everything on it." },
+    "shell.recursive_delete": { "decisions": ["ask"], "why": "A recursive delete removes many files at once; a person checks the target first." }
+  },
+  "policy": {
+    "policy_id": "intentrax.shell-destructive",
+    "policy_version": "0.1.0",
+    "rules": [
+      {
+        "rule_id": "rule.deny-wipe-system",
+        "effect": "DENY",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "shell.wipe_system" }],
+        "constraints": [],
+        "priority": 30
+      },
+      {
+        "rule_id": "rule.deny-raw-disk-write",
+        "effect": "DENY",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "shell.raw_disk_write" }],
+        "constraints": [],
+        "priority": 20
+      },
+      {
+        "rule_id": "rule.approve-recursive-delete",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "shell.recursive_delete" }],
+        "constraints": [{ "constraint_id": "constraint.shell-destructive.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.shell-destructive.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "The developer running the agent, or whoever owns the machine."
+  },
+  "limits": [
+    "Pattern matching on the command text: a command built at run time (variables, eval, scripts it calls) is not seen.",
+    "It reads Bash and PowerShell tool calls only; a delete done by another tool or an MCP server is covered by intentrax.destructive-tools.",
+    "When a command chains several rm calls, a root target in any of them is treated as a root wipe."
+  ],
+  "examples": [
+    { "name": "rm -rf root", "tool_name": "Bash", "tool_input": { "command": "rm -rf /" }, "expect": "block" },
+    { "name": "sudo rm no-preserve-root", "tool_name": "Bash", "tool_input": { "command": "sudo rm -rf --no-preserve-root /" }, "expect": "block" },
+    { "name": "rm -rf home", "tool_name": "Bash", "tool_input": { "command": "cd /tmp && rm -fr ~/" }, "expect": "block" },
+    { "name": "dd to a device", "tool_name": "Bash", "tool_input": { "command": "dd if=/dev/zero of=/dev/sda bs=1M" }, "expect": "block" },
+    { "name": "mkfs", "tool_name": "Bash", "tool_input": { "command": "mkfs.ext4 /dev/sdb1" }, "expect": "block" },
+    { "name": "PowerShell wipe a drive", "tool_name": "PowerShell", "tool_input": { "command": "Remove-Item -Recurse -Force C:\\" }, "expect": "block" },
+    { "name": "rm -rf build dir", "tool_name": "Bash", "tool_input": { "command": "rm -rf build dist" }, "expect": "ask" },
+    { "name": "rm -r in a chain", "tool_name": "Bash", "tool_input": { "command": "cd app && rm -r node_modules && npm ci" }, "expect": "ask" },
+    { "name": "find -delete", "tool_name": "Bash", "tool_input": { "command": "find . -name '*.log' -delete" }, "expect": "ask" },
+    { "name": "git clean", "tool_name": "Bash", "tool_input": { "command": "git clean -fdx" }, "expect": "ask" },
+    { "name": "plain listing", "tool_name": "Bash", "tool_input": { "command": "ls -la /" }, "expect": "none" },
+    { "name": "single file rm", "tool_name": "Bash", "tool_input": { "command": "rm notes.txt" }, "expect": "none" },
+    { "name": "rm --force without recursion", "tool_name": "Bash", "tool_input": { "command": "rm --force old.log" }, "expect": "none" },
+    { "name": "words that contain rm", "tool_name": "Bash", "tool_input": { "command": "npm run format -- --recursive" }, "expect": "none" },
+    { "name": "other tool", "tool_name": "Read", "tool_input": { "file_path": "/etc/hosts" }, "expect": "none" }
+  ]
+}

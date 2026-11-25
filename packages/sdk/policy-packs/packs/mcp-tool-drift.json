@@ -1,0 +1,69 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.mcp-tool-drift",
+  "pack_version": "0.1.0",
+  "title": "MCP tools that changed after pinning",
+  "summary": "Blocks a call to an MCP tool whose definition changed since you pinned it, or that appeared after pinning, as reported by intentrax mcp check.",
+  "scan": {
+    "category": "unknown",
+    "rule_ids": ["scan.category.unknown", "scan.kind.mcp-server"]
+  },
+  "params": {},
+  "matchers": [
+    {
+      "matcher_id": "pinned-tool-changed",
+      "tool": { "regex": "^mcp__" },
+      "context": { "mcp_pin_status": ["CHANGED"] },
+      "action": "mcp.tool_changed"
+    },
+    {
+      "matcher_id": "tool-added-after-pinning",
+      "tool": { "regex": "^mcp__" },
+      "context": { "mcp_pin_status": ["NEW"] },
+      "action": "mcp.tool_added"
+    }
+  ],
+  "actions": {
+    "mcp.tool_changed": { "decisions": ["block"], "why": "The tool's name, description or input schema changed since you pinned it; review the change and re-pin before the agent uses it." },
+    "mcp.tool_added": { "decisions": ["block"], "why": "The server added this tool after you pinned it; review it and re-pin before the agent uses it." }
+  },
+  "policy": {
+    "policy_id": "intentrax.mcp-tool-drift",
+    "policy_version": "0.1.0",
+    "rules": [
+      {
+        "rule_id": "rule.deny-changed-tool",
+        "effect": "DENY",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "mcp.tool_changed" }],
+        "constraints": [],
+        "priority": 20
+      },
+      {
+        "rule_id": "rule.deny-added-tool",
+        "effect": "DENY",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "mcp.tool_added" }],
+        "constraints": [],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.mcp-tool-drift.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "Whoever maintains the pinned MCP tool list (intentrax mcp pin --replace after review)."
+  },
+  "limits": [
+    "It acts only on the pin status the guard supplies (context.mcp_pin_status). With no pins (intentrax mcp pin), or when the guard did not check, nothing matches.",
+    "Pinning covers tool definitions only. It does not show that the server's code or behaviour is unchanged.",
+    "The approval constraint is declared for completeness; this pack never asks, it blocks."
+  ],
+  "examples": [
+    { "name": "changed tool", "tool_name": "mcp__github__create_issue", "tool_input": { "title": "x" }, "context": { "mcp_pin_status": "CHANGED" }, "expect": "block" },
+    { "name": "tool added after pinning", "tool_name": "mcp__github__delete_repository", "tool_input": {}, "context": { "mcp_pin_status": "NEW" }, "expect": "block" },
+    { "name": "pinned tool unchanged", "tool_name": "mcp__github__create_issue", "tool_input": { "title": "x" }, "context": { "mcp_pin_status": "MATCH" }, "expect": "none" },
+    { "name": "no pins yet", "tool_name": "mcp__github__create_issue", "tool_input": { "title": "x" }, "context": { "mcp_pin_status": "UNPINNED" }, "expect": "none" },
+    { "name": "status not checked", "tool_name": "mcp__github__create_issue", "tool_input": { "title": "x" }, "expect": "none" },
+    { "name": "built-in tool", "tool_name": "Bash", "tool_input": { "command": "ls" }, "context": { "mcp_pin_status": "CHANGED" }, "expect": "none" }
+  ]
+}

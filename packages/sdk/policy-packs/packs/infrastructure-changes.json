@@ -1,0 +1,112 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.infrastructure-changes",
+  "pack_version": "0.1.0",
+  "title": "Infrastructure changes and teardown",
+  "summary": "Blocks infrastructure teardown (terraform destroy, kubectl delete, deleting cloud volumes, buckets or instances) outside DEV, where it asks; asks before infrastructure changes (terraform apply, kubectl apply, helm upgrade) outside DEV, where they run.",
+  "scan": {
+    "category": "infrastructure",
+    "rule_ids": ["scan.category.infrastructure", "scan.category.shell"]
+  },
+  "params": {},
+  "matchers": [
+    {
+      "matcher_id": "shell-teardown",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])(terraform|tofu|pulumi)\\s+destroy\\b|(^|[^A-Za-z0-9_-])(terraform|tofu)\\s+apply\\b[^;&|]*\\s-destroy\\b|(^|[^A-Za-z0-9_-])kubectl\\s+delete\\b|(^|[^A-Za-z0-9_-])helm\\s+(uninstall|delete)\\b|(^|[^A-Za-z0-9_-])aws\\s+[a-z0-9-]+\\s+(delete-[a-z0-9-]+|terminate-instances|deregister-[a-z0-9-]+|rb)\\b|(^|[^A-Za-z0-9_-])aws\\s+s3\\s+rm\\b[^;&|]*--recursive|(^|[^A-Za-z0-9_-])(gcloud|az|doctl)\\s[^;&|]*\\s(delete|destroy)\\b|(^|[^A-Za-z0-9_-])(fly|flyctl)\\s+(apps\\s+destroy|volumes\\s+(destroy|delete)|destroy)\\b|(^|[^A-Za-z0-9_-])heroku\\s+(apps:destroy|pg:reset)\\b|(^|[^A-Za-z0-9_-])railway\\s+(down|delete)\\b|(^|[^A-Za-z0-9_-])docker\\s+(system\\s+prune|volume\\s+(rm|prune))\\b" }],
+      "action": "infra.teardown"
+    },
+    {
+      "matcher_id": "shell-change",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])(terraform|tofu)\\s+(apply|import|state\\s+(rm|mv|push))\\b|(^|[^A-Za-z0-9_-])pulumi\\s+up\\b|(^|[^A-Za-z0-9_-])kubectl\\s+(apply|create|replace|patch|scale|rollout|edit|set|drain|cordon|label|annotate)\\b|(^|[^A-Za-z0-9_-])helm\\s+(install|upgrade|rollback)\\b|(^|[^A-Za-z0-9_-])aws\\s+[a-z0-9-]+\\s+(create|put|update|modify|run|start|stop|reboot|attach|detach|associate|disassociate|authorize|revoke|enable|disable|register|restore)-[a-z0-9-]+\\b|(^|[^A-Za-z0-9_-])(gcloud|az|doctl)\\s[^;&|]*\\s(create|update|deploy|resize|stop|start|restart)\\b" }],
+      "action": "infra.change"
+    },
+    {
+      "matcher_id": "tool-teardown",
+      "tool": {
+        "token_groups": [
+          ["aws", "gcp", "gcloud", "azure", "kubernetes", "k8s", "kubectl", "terraform", "pulumi", "railway", "vercel", "netlify", "fly", "heroku", "cloudflare", "digitalocean", "ec2", "s3", "lambda", "rds", "infra", "cluster", "volume", "volumes", "bucket", "instance", "instances", "vm", "server", "servers"],
+          ["delete", "destroy", "terminate", "drop", "purge", "deprovision", "teardown", "wipe", "remove"]
+        ],
+        "tokens_none": ["get", "list", "read", "search", "describe", "show", "view", "preview", "check", "estimate"]
+      },
+      "action": "infra.teardown"
+    },
+    {
+      "matcher_id": "tool-change",
+      "tool": {
+        "token_groups": [
+          ["aws", "gcp", "gcloud", "azure", "kubernetes", "k8s", "kubectl", "terraform", "pulumi", "railway", "fly", "heroku", "cloudflare", "digitalocean", "ec2", "s3", "lambda", "rds", "infra", "cluster", "volume", "volumes", "bucket", "instance", "instances", "vm"],
+          ["create", "update", "apply", "scale", "restart", "provision", "modify", "attach", "detach", "resize", "stop", "start", "reboot", "put", "set"]
+        ],
+        "tokens_none": ["get", "list", "read", "search", "describe", "show", "view", "preview", "check", "estimate"]
+      },
+      "action": "infra.change"
+    }
+  ],
+  "actions": {
+    "infra.teardown": { "decisions": ["ask", "block"], "why": "Tearing down infrastructure (volumes, buckets, clusters, instances) loses data and backups with it; outside DEV an agent never does it." },
+    "infra.change": { "decisions": ["allow", "ask"], "why": "An infrastructure change outside DEV can take a service down; a person reviews the plan first." }
+  },
+  "policy": {
+    "policy_id": "intentrax.infrastructure-changes",
+    "policy_version": "0.1.0",
+    "rules": [
+      {
+        "rule_id": "rule.approve-teardown-in-dev",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "infra.teardown" }, { "field": "eeo.request.environment", "operator": "EQUALS", "value": "DEV" }],
+        "constraints": [{ "constraint_id": "constraint.infrastructure-changes.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 40
+      },
+      {
+        "rule_id": "rule.deny-teardown",
+        "effect": "DENY",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "infra.teardown" }],
+        "constraints": [],
+        "priority": 30
+      },
+      {
+        "rule_id": "rule.allow-change-in-dev",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "infra.change" }, { "field": "eeo.request.environment", "operator": "EQUALS", "value": "DEV" }],
+        "constraints": [],
+        "priority": 20
+      },
+      {
+        "rule_id": "rule.approve-change",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "infra.change" }],
+        "constraints": [{ "constraint_id": "constraint.infrastructure-changes.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.infrastructure-changes.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "The owner of the environment (platform or on-call engineer)."
+  },
+  "limits": [
+    "The environment fact comes from the policy file, not from the command: a DEV policy file on a machine with production credentials treats production as DEV.",
+    "Provider CLIs are matched by common verbs; a provider or verb not listed (or a script that wraps them) is not seen.",
+    "Tool names are matched by words, so an MCP tool named like infrastructure but doing something else is matched too."
+  ],
+  "examples": [
+    { "name": "terraform destroy", "tool_name": "Bash", "tool_input": { "command": "terraform destroy -auto-approve" }, "environment": "PROD", "expect": "block" },
+    { "name": "kubectl delete namespace", "tool_name": "Bash", "tool_input": { "command": "kubectl delete namespace payments" }, "expect": "block" },
+    { "name": "aws s3 rb", "tool_name": "Bash", "tool_input": { "command": "aws s3 rb s3://acme-backups --force" }, "expect": "block" },
+    { "name": "MCP volume delete", "tool_name": "mcp__railway__volume_delete", "tool_input": { "volumeId": "vol_1" }, "expect": "block" },
+    { "name": "terraform destroy in DEV", "tool_name": "Bash", "tool_input": { "command": "terraform destroy" }, "environment": "DEV", "expect": "ask" },
+    { "name": "terraform apply", "tool_name": "Bash", "tool_input": { "command": "terraform apply plan.out" }, "environment": "PROD", "expect": "ask" },
+    { "name": "kubectl apply", "tool_name": "Bash", "tool_input": { "command": "kubectl apply -f deploy.yaml" }, "expect": "ask" },
+    { "name": "terraform apply in DEV", "tool_name": "Bash", "tool_input": { "command": "terraform apply" }, "environment": "DEV", "expect": "allow" },
+    { "name": "MCP scale service", "tool_name": "mcp__kubernetes__scale_deployment", "tool_input": { "name": "api", "replicas": 3 }, "environment": "STAGING", "expect": "ask" },
+    { "name": "terraform plan", "tool_name": "Bash", "tool_input": { "command": "terraform plan" }, "expect": "none" },
+    { "name": "kubectl get", "tool_name": "Bash", "tool_input": { "command": "kubectl get pods -A" }, "expect": "none" },
+    { "name": "aws s3 ls", "tool_name": "Bash", "tool_input": { "command": "aws s3 ls s3://acme-backups" }, "expect": "none" },
+    { "name": "MCP list instances", "tool_name": "mcp__aws__list_instances", "tool_input": {}, "expect": "none" }
+  ]
+}

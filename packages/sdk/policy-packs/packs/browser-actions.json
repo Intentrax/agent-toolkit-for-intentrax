@@ -1,0 +1,77 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.browser-actions",
+  "pack_version": "0.1.0",
+  "title": "Browser clicks, typing and page code",
+  "summary": "Asks before an agent clicks, types, fills forms, uploads files or runs code in a web page through a browser tool. Navigation, snapshots and screenshots are not matched.",
+  "scan": {
+    "category": "browser",
+    "rule_ids": ["scan.category.browser"]
+  },
+  "params": {},
+  "matchers": [
+    {
+      "matcher_id": "run-page-code",
+      "tool": {
+        "token_groups": [["browser", "playwright", "puppeteer", "chrome", "selenium", "browserbase"], ["evaluate", "javascript", "js", "run", "execute", "script"]]
+      },
+      "action": "browser.run_page_code"
+    },
+    {
+      "matcher_id": "interact",
+      "tool": {
+        "token_groups": [["browser", "playwright", "puppeteer", "chrome", "selenium", "browserbase"], ["click", "type", "fill", "submit", "select", "upload", "press", "drag", "form", "file", "check", "uncheck"]]
+      },
+      "action": "browser.interact"
+    },
+    {
+      "matcher_id": "computer-use-action",
+      "tool": { "token_groups": [["browser", "chrome"], ["computer"]] },
+      "input": [{ "pointer": "/action", "regex": "^(left_click|right_click|double_click|triple_click|middle_click|type|key|left_click_drag)$" }],
+      "action": "browser.interact"
+    }
+  ],
+  "actions": {
+    "browser.run_page_code": { "decisions": ["ask"], "why": "Code run inside a signed-in page acts with your session and can do anything the page can." },
+    "browser.interact": { "decisions": ["ask"], "why": "A click or keystroke in a signed-in page can submit a form, send a message or buy something; a person confirms it." }
+  },
+  "policy": {
+    "policy_id": "intentrax.browser-actions",
+    "policy_version": "0.1.0",
+    "rules": [
+      {
+        "rule_id": "rule.approve-page-code",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "browser.run_page_code" }],
+        "constraints": [{ "constraint_id": "constraint.browser-actions.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 20
+      },
+      {
+        "rule_id": "rule.approve-interaction",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "browser.interact" }],
+        "constraints": [{ "constraint_id": "constraint.browser-actions.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.browser-actions.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "The person whose browser session the agent is using."
+  },
+  "limits": [
+    "Every interaction is asked about, including harmless ones such as opening a menu; the pack cannot see what a click will do.",
+    "Browser tools are found by words in their names (browser, playwright, puppeteer, chrome); a browser driven by a script the agent runs is not seen."
+  ],
+  "examples": [
+    { "name": "playwright click", "tool_name": "mcp__playwright__browser_click", "tool_input": { "element": "Buy now", "ref": "e12" }, "expect": "ask" },
+    { "name": "playwright type", "tool_name": "mcp__playwright__browser_type", "tool_input": { "ref": "e3", "text": "hello" }, "expect": "ask" },
+    { "name": "playwright evaluate", "tool_name": "mcp__playwright__browser_evaluate", "tool_input": { "function": "() => document.title" }, "expect": "ask" },
+    { "name": "chrome computer click", "tool_name": "mcp__claude-in-chrome__computer", "tool_input": { "action": "left_click", "coordinate": [10, 20] }, "expect": "ask" },
+    { "name": "navigate", "tool_name": "mcp__playwright__browser_navigate", "tool_input": { "url": "https://example.com" }, "expect": "none" },
+    { "name": "snapshot", "tool_name": "mcp__playwright__browser_snapshot", "tool_input": {}, "expect": "none" },
+    { "name": "chrome computer screenshot", "tool_name": "mcp__claude-in-chrome__computer", "tool_input": { "action": "screenshot" }, "expect": "none" }
+  ]
+}

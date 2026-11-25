@@ -1,0 +1,116 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.git-force-push",
+  "pack_version": "0.1.0",
+  "title": "Force push and remote branch deletion",
+  "summary": "Blocks force pushes to, and deletion of, protected branches (main, master, trunk, production, release) and asks before any other force push or remote branch deletion.",
+  "scan": {
+    "category": "deploy",
+    "rule_ids": ["scan.category.deploy", "scan.category.shell"],
+    "name_tokens": ["git", "github", "gitlab", "bitbucket", "push", "ref", "refs", "branch", "branches"]
+  },
+  "params": {},
+  "matchers": [
+    {
+      "matcher_id": "delete-protected-branch",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [
+        { "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])git\\s+push\\b[^;&|]*(\\s--delete\\b|\\s-d\\s|\\s:[A-Za-z0-9])" },
+        { "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])git\\s+push\\b[^;&|]*[\\s:](main|master|trunk|production|release)(\\s|$|[;&|])" }
+      ],
+      "action": "git.delete_remote_branch",
+      "facts": { "resource": { "capture": 2, "input": 1, "required": true } }
+    },
+    {
+      "matcher_id": "delete-other-branch",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])git\\s+push\\b[^;&|]*(\\s--delete\\b|\\s-d\\s|\\s:[A-Za-z0-9])" }],
+      "action": "git.delete_remote_branch"
+    },
+    {
+      "matcher_id": "force-push-protected",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [
+        { "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])git\\s+push\\b[^;&|]*\\s(-[A-Za-z]*f[A-Za-z]*|--force|--force-with-lease(=\\S*)?|--force-if-includes)(\\s|$)|(^|[^A-Za-z0-9_-])git\\s+push\\b[^;&|]*\\s\\+[^\\s+]" },
+        { "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])git\\s+push\\b[^;&|]*\\s\\+?([A-Za-z0-9._/-]+:)?(refs/heads/)?(main|master|trunk|production|release)(\\s|$|[;&|])" }
+      ],
+      "action": "git.force_push",
+      "facts": { "resource": { "capture": 4, "input": 1, "required": true } }
+    },
+    {
+      "matcher_id": "force-push-other",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])git\\s+push\\b[^;&|]*\\s(-[A-Za-z]*f[A-Za-z]*|--force|--force-with-lease(=\\S*)?|--force-if-includes)(\\s|$)|(^|[^A-Za-z0-9_-])git\\s+push\\b[^;&|]*\\s\\+[^\\s+]" }],
+      "action": "git.force_push"
+    },
+    {
+      "matcher_id": "mcp-force-update-ref",
+      "tool": { "token_groups": [["ref", "refs", "branch", "push"]] },
+      "input": [{ "pointer": "/force", "equals": true }],
+      "action": "git.force_push",
+      "facts": { "resource": { "pointers": ["/branch", "/ref"], "type": "STRING" } }
+    }
+  ],
+  "actions": {
+    "git.force_push": { "decisions": ["ask", "block"], "why": "A force push rewrites remote history and can drop other people's commits; protected branches are never force-pushed by an agent." },
+    "git.delete_remote_branch": { "decisions": ["ask", "block"], "why": "Deleting a remote branch removes it for everyone; protected branches are never deleted by an agent." }
+  },
+  "policy": {
+    "policy_id": "intentrax.git-force-push",
+    "policy_version": "0.1.0",
+    "rules": [
+      { "rule_id": "rule.deny-force-push-main", "effect": "DENY", "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.force_push" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": "main" }], "constraints": [], "priority": 120 },
+      { "rule_id": "rule.deny-force-push-master", "effect": "DENY", "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.force_push" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": "master" }], "constraints": [], "priority": 110 },
+      { "rule_id": "rule.deny-force-push-trunk", "effect": "DENY", "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.force_push" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": "trunk" }], "constraints": [], "priority": 100 },
+      { "rule_id": "rule.deny-force-push-production", "effect": "DENY", "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.force_push" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": "production" }], "constraints": [], "priority": 90 },
+      { "rule_id": "rule.deny-force-push-release", "effect": "DENY", "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.force_push" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": "release" }], "constraints": [], "priority": 80 },
+      { "rule_id": "rule.deny-force-push-refs-main", "effect": "DENY", "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.force_push" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": "refs/heads/main" }], "constraints": [], "priority": 75 },
+      { "rule_id": "rule.deny-force-push-refs-master", "effect": "DENY", "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.force_push" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": "refs/heads/master" }], "constraints": [], "priority": 70 },
+      { "rule_id": "rule.deny-delete-main", "effect": "DENY", "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.delete_remote_branch" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": "main" }], "constraints": [], "priority": 60 },
+      { "rule_id": "rule.deny-delete-master", "effect": "DENY", "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.delete_remote_branch" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": "master" }], "constraints": [], "priority": 55 },
+      { "rule_id": "rule.deny-delete-trunk", "effect": "DENY", "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.delete_remote_branch" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": "trunk" }], "constraints": [], "priority": 50 },
+      { "rule_id": "rule.deny-delete-production", "effect": "DENY", "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.delete_remote_branch" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": "production" }], "constraints": [], "priority": 45 },
+      { "rule_id": "rule.deny-delete-release", "effect": "DENY", "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.delete_remote_branch" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": "release" }], "constraints": [], "priority": 40 },
+      {
+        "rule_id": "rule.approve-force-push",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.force_push" }],
+        "constraints": [{ "constraint_id": "constraint.git-force-push.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 20
+      },
+      {
+        "rule_id": "rule.approve-branch-delete",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "git.delete_remote_branch" }],
+        "constraints": [{ "constraint_id": "constraint.git-force-push.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.git-force-push.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "A maintainer of the repository."
+  },
+  "limits": [
+    "The protected branch list is fixed in this pack (main, master, trunk, production, release); copy the pack to change it.",
+    "A force push without a branch on the command line (git push -f, pushing the current branch) is asked about, not blocked, because the branch is not in the command.",
+    "Branch protection on the server is the real control; this pack only stops the agent from trying."
+  ],
+  "examples": [
+    { "name": "force push main", "tool_name": "Bash", "tool_input": { "command": "git push --force origin main" }, "expect": "block" },
+    { "name": "short flag to master refspec", "tool_name": "Bash", "tool_input": { "command": "git push -f origin HEAD:master" }, "expect": "block" },
+    { "name": "plus refspec", "tool_name": "Bash", "tool_input": { "command": "git push origin +main" }, "expect": "block" },
+    { "name": "delete main", "tool_name": "Bash", "tool_input": { "command": "git push origin --delete main" }, "expect": "block" },
+    { "name": "MCP update_ref force on main", "tool_name": "mcp__github__update_ref", "tool_input": { "ref": "refs/heads/main", "sha": "abc123", "force": true }, "expect": "block" },
+    { "name": "force with lease on a feature branch", "tool_name": "Bash", "tool_input": { "command": "git push --force-with-lease origin feature/login" }, "expect": "ask" },
+    { "name": "force push current branch", "tool_name": "Bash", "tool_input": { "command": "git push -f" }, "expect": "ask" },
+    { "name": "delete a feature branch", "tool_name": "Bash", "tool_input": { "command": "git push origin :old-branch" }, "expect": "ask" },
+    { "name": "normal push to main", "tool_name": "Bash", "tool_input": { "command": "git push origin main" }, "expect": "none" },
+    { "name": "set upstream", "tool_name": "Bash", "tool_input": { "command": "git push -u origin feature/fix-login" }, "expect": "none" },
+    { "name": "push with follow-tags", "tool_name": "Bash", "tool_input": { "command": "git push --follow-tags origin main" }, "expect": "none" },
+    { "name": "fetch --force", "tool_name": "Bash", "tool_input": { "command": "git fetch --force origin" }, "expect": "none" },
+    { "name": "MCP update_ref without force", "tool_name": "mcp__github__update_ref", "tool_input": { "ref": "refs/heads/main", "sha": "abc123", "force": false }, "expect": "none" }
+  ]
+}

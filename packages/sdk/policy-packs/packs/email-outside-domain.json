@@ -1,0 +1,86 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.email-outside-domain",
+  "pack_version": "0.1.0",
+  "title": "Email outside your domain",
+  "summary": "Lets email to your own domain go out and asks before email to any other domain, to mixed recipients, or to recipients the call does not show.",
+  "scan": {
+    "category": "communication",
+    "rule_ids": ["scan.category.communication", "scan.category.shell"],
+    "name_tokens": ["email", "emails", "mail", "gmail", "outlook", "smtp", "sendgrid", "resend", "mailgun", "postmark", "ses"]
+  },
+  "params": {
+    "internal_domain": {
+      "type": "STRING",
+      "default": "example.com",
+      "description": "Your organisation's email domain, lower case (for example acme.com). Email where every recipient is at this exact domain runs without approval."
+    }
+  },
+  "matchers": [
+    {
+      "matcher_id": "send-email-tool",
+      "tool": {
+        "token_groups": [
+          ["email", "emails", "mail", "gmail", "outlook", "smtp", "sendgrid", "resend", "mailgun", "postmark", "ses"],
+          ["send", "reply", "forward"]
+        ],
+        "tokens_none": ["draft", "drafts", "list", "get", "read", "search", "fetch"]
+      },
+      "action": "email.send",
+      "facts": { "resource": { "email_domain": ["/to", "/cc", "/bcc", "/recipients", "/recipient"] } }
+    },
+    {
+      "matcher_id": "shell-mail",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])(sendmail|mailx|mail|mutt|msmtp|swaks)\\s|\\bSend-MailMessage\\b" }],
+      "action": "email.send"
+    }
+  ],
+  "actions": {
+    "email.send": { "decisions": ["allow", "ask"], "why": "Email that leaves your organisation cannot be recalled; a person checks recipients outside your domain." }
+  },
+  "policy": {
+    "policy_id": "intentrax.email-outside-domain",
+    "policy_version": "0.1.0",
+    "rules": [
+      {
+        "rule_id": "rule.allow-internal-email",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "email.send" }, { "field": "eeo.request.resource", "operator": "EQUALS", "value": { "param": "internal_domain" } }],
+        "constraints": [],
+        "priority": 20
+      },
+      {
+        "rule_id": "rule.approve-other-email",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "email.send" }],
+        "constraints": [{ "constraint_id": "constraint.email-outside-domain.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.email-outside-domain.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "The person the agent is acting for."
+  },
+  "limits": [
+    "The resource fact is the recipients' domain, lower-cased, only when every recipient in to, cc, bcc, recipients and recipient shares one domain; otherwise it is absent and the email is asked about.",
+    "Subdomains are other domains: mail to eu.acme.com is asked about when internal_domain is acme.com.",
+    "The default internal_domain is example.com, so every real email is asked about until you set it."
+  ],
+  "examples": [
+    { "name": "internal email", "tool_name": "mcp__gmail__send_email", "tool_input": { "to": "ana@example.com", "subject": "notes" }, "expect": "allow" },
+    { "name": "named address, internal", "tool_name": "mcp__gmail__send_email", "tool_input": { "to": ["Ana <ana@example.com>"], "cc": "bo@EXAMPLE.com" }, "expect": "allow" },
+    { "name": "outside the domain", "tool_name": "mcp__gmail__send_email", "tool_input": { "to": "bob@other.org" }, "expect": "ask" },
+    { "name": "mixed recipients", "tool_name": "sendEmail", "tool_input": { "to": ["a@example.com", "b@other.org"] }, "expect": "ask" },
+    { "name": "custom internal domain", "tool_name": "mcp__resend__send_email", "tool_input": { "to": "x@acme.io" }, "params": { "internal_domain": "acme.io" }, "expect": "allow" },
+    { "name": "unrecognised recipient shape", "tool_name": "sendEmail", "tool_input": { "to": "a@example.com", "bcc": [{ "emailAddress": { "address": "b@other.org" } }] }, "expect": "ask" },
+    { "name": "no recipients in the call", "tool_name": "mcp__outlook__reply_message", "tool_input": { "message_id": "m1", "body": "thanks" }, "expect": "ask" },
+    { "name": "shell mail", "tool_name": "Bash", "tool_input": { "command": "echo hi | mail -s test bob@other.org" }, "expect": "ask" },
+    { "name": "search mail", "tool_name": "mcp__gmail__search_emails", "tool_input": { "query": "from:bob" }, "expect": "none" },
+    { "name": "draft only", "tool_name": "mcp__gmail__create_draft", "tool_input": { "to": "bob@other.org" }, "expect": "none" },
+    { "name": "slack is another pack", "tool_name": "mcp__slack__slack_post_message", "tool_input": { "channel_id": "C1", "text": "hi" }, "expect": "none" }
+  ]
+}

@@ -10,7 +10,8 @@ The package is public on npm (Apache-2.0). Everything below that says
 "offline" or "local" runs today with no API key: `init --dry-run`,
 `check-init`, `verify-proof` (sandbox sample proofs, including tampered ones,
 are bundled at `examples/sandbox/`), `verify-pdf-receipt`, `sandbox` (the
-local assurance sandbox below), `scan`, `readback` and `mcp`. Live execution
+local assurance sandbox below), `scan`, `policy`, `approve`, `readback` and
+`mcp`. Live execution
 keys and your sandbox base URL are issued after an architectural review at
 <https://www.intentrax.com/request-architectural-review>.
 
@@ -57,6 +58,37 @@ Public surfaces:
   descriptions never leave your machine. Covers tool definitions only. It does
   not show that the server's code or behaviour is unchanged. See
   [mcp/README.md](mcp/README.md).
+
+- `intentrax policy list|show|hash|validate|init --from-scan|check` (1.10.0):
+  open policy packs, one per scan category. Each is a C2 policy that decides
+  allow (no objection), ask or block for an agent's tool call, for example
+  destructive shell commands, force pushes to protected branches, database
+  writes outside DEV, refunds above a set amount, and email outside your
+  domain. `init --from-scan` writes a draft `.intentrax/policy.jsonc` that
+  selects the packs the scan matched and pins each by its `pack_hash`. Facts
+  are read from the tool input on this machine (self-reported); the decision
+  can be re-checked from the policy hash. Pattern matching: a pack can miss a
+  call phrased in a way it does not recognise. See
+  [policy-packs/README.md](policy-packs/README.md).
+- `intentrax approve` (1.10.0) signs an `intentrax.approval/0.1` approval or
+  rejection with a local, human APPROVER key after recomputing the request
+  hashes and showing you the request; `approve keygen` makes the key and its
+  registration request. Local only: nothing is sent. See
+  [approve/README.md](approve/README.md).
+- `@intentrax/sdk/envelope` (1.10.0): the spec 00 primitives (RFC 8785 JCS,
+  `D(domain, value)`, and the `intentrax.signed_envelope/1.0` verifier with
+  pinned keys), byte-identical to the Go engine's. It verifies; it holds no
+  keys. See [envelope/README.md](envelope/README.md).
+- `intentrax verify-proof` (1.10.0) also checks signed pre-approval records
+  (specs 01–03). It checks the sealed admission decision and
+  `policy_binding/1.2` for consistency, and re-runs the ADMISSION-lane policy
+  when the export opens the withheld facts. It re-checks sealed approvals
+  against the attached approval envelopes, the approver set and the tenant key
+  directory. You trust the directory through a head you pin
+  (`--pin-directory-head`) or a `published_key_set/1.2` key, and can supply
+  documents with `--tenant-keys` / `--approver-set`. An approval that was not
+  verified never upgrades the verdict. See
+  [preapproval/README.md](preapproval/README.md).
 
 The published package exports Node-runnable `.js` modules with `.d.ts` type
 declarations and is gated on Node 20 and Node 24.

@@ -1,0 +1,127 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.access-changes",
+  "pack_version": "0.1.0",
+  "title": "Access and permission changes",
+  "summary": "Blocks granting admin or owner rights and making resources public, and asks before any other change to who can access what (invites, roles, sharing, IAM, chmod 777).",
+  "scan": {
+    "category": "access",
+    "rule_ids": ["scan.category.access", "scan.category.shell"]
+  },
+  "params": {},
+  "matchers": [
+    {
+      "matcher_id": "tool-grant-admin",
+      "tool": {
+        "token_groups": [
+          ["grant", "add", "assign", "invite", "set", "update", "promote", "make", "give", "attach", "elevate"],
+          ["admin", "admins", "administrator", "owner", "owners", "root", "superuser", "superadmin"]
+        ],
+        "tokens_none": ["list", "get", "read", "search", "describe", "check", "view"]
+      },
+      "action": "access.grant_admin"
+    },
+    {
+      "matcher_id": "shell-grant-admin",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "AdministratorAccess|IAMFullAccess|roles/owner\\b|roles/editor\\b|--role[= ]+\"?(Owner|owner|admin|Admin|Contributor)\\b|(^|[^A-Za-z0-9_-])gh\\s+api\\b[^;&|]*collaborators[^;&|]*permission=admin" }],
+      "action": "access.grant_admin"
+    },
+    {
+      "matcher_id": "tool-make-public",
+      "tool": {
+        "token_groups": [["public"], ["make", "set", "share", "publish", "change", "update", "enable"]],
+        "tokens_none": ["list", "get", "read", "search", "describe", "check", "view"]
+      },
+      "action": "access.make_public"
+    },
+    {
+      "matcher_id": "shell-make-public",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "--acl\\s+public-read(-write)?\\b|\\ballUsers\\b|\\ballAuthenticatedUsers\\b|--visibility[= ]+public\\b|--public-access\\s+(blob|container)\\b|put-public-access-block[^;&|]*false" }],
+      "action": "access.make_public"
+    },
+    {
+      "matcher_id": "tool-share",
+      "tool": {
+        "token_groups": [["share", "unshare", "sharing"]],
+        "tokens_none": ["list", "get", "read", "search", "describe", "check", "view"]
+      },
+      "action": "access.change"
+    },
+    {
+      "matcher_id": "tool-access-change",
+      "tool": {
+        "token_groups": [
+          ["grant", "invite", "share", "assign", "authorize", "impersonate", "revoke", "rotate", "add", "remove", "update", "set", "create"],
+          ["member", "members", "collaborator", "collaborators", "role", "roles", "permission", "permissions", "access", "user", "users", "team", "policy", "acl", "key", "keys", "token", "tokens", "sharing", "membership"]
+        ],
+        "tokens_none": ["list", "get", "read", "search", "describe", "check", "view"]
+      },
+      "action": "access.change"
+    },
+    {
+      "matcher_id": "shell-access-change",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])aws\\s+iam\\s+(attach|put|create|update|add|delete|detach|remove)-[a-z-]+|(^|[^A-Za-z0-9_-])gcloud\\s[^;&|]*(add|remove)-iam-policy-binding|(^|[^A-Za-z0-9_-])az\\s+role\\s+assignment\\s+(create|delete)|(^|[^A-Za-z0-9_-])gh\\s+api\\b[^;&|]*collaborators|(^|[^A-Za-z0-9_-])chmod\\s+(-R\\s+)?(777|666|a\\+w|o\\+w)\\b|(^|[^A-Za-z0-9_-])kubectl\\s+create\\s+(cluster)?rolebinding\\b" }],
+      "action": "access.change"
+    }
+  ],
+  "actions": {
+    "access.grant_admin": { "decisions": ["block"], "why": "Handing out admin or owner rights widens what every later mistake can reach; a person does it, not an agent." },
+    "access.make_public": { "decisions": ["block"], "why": "Making a bucket, repository or file public exposes it to anyone, and copies cannot be called back." },
+    "access.change": { "decisions": ["ask"], "why": "Changing who can access what is a security decision; a person checks who gets which access." }
+  },
+  "policy": {
+    "policy_id": "intentrax.access-changes",
+    "policy_version": "0.1.0",
+    "rules": [
+      {
+        "rule_id": "rule.deny-admin-grant",
+        "effect": "DENY",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "access.grant_admin" }],
+        "constraints": [],
+        "priority": 30
+      },
+      {
+        "rule_id": "rule.deny-make-public",
+        "effect": "DENY",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "access.make_public" }],
+        "constraints": [],
+        "priority": 20
+      },
+      {
+        "rule_id": "rule.approve-access-change",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "access.change" }],
+        "constraints": [{ "constraint_id": "constraint.access-changes.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.access-changes.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "An administrator of the system whose access is changing."
+  },
+  "limits": [
+    "Admin grants are found by words in the tool name or by well-known role names in the command; a role passed only as an argument to a generic tool (add_member with role=admin) is asked about, not blocked.",
+    "Words such as key and token also match tools that create API keys or tokens; those are asked about.",
+    "It does not see access changes made in a web console or by a script the agent runs."
+  ],
+  "examples": [
+    { "name": "assign admin role", "tool_name": "mcp__okta__assign_admin_role", "tool_input": { "user": "u1" }, "expect": "block" },
+    { "name": "attach AdministratorAccess", "tool_name": "Bash", "tool_input": { "command": "aws iam attach-user-policy --user-name bot --policy-arn arn:aws:iam::aws:policy/AdministratorAccess" }, "expect": "block" },
+    { "name": "public bucket", "tool_name": "Bash", "tool_input": { "command": "aws s3 cp report.pdf s3://acme-reports/ --acl public-read" }, "expect": "block" },
+    { "name": "make repository public", "tool_name": "Bash", "tool_input": { "command": "gh repo edit acme/app --visibility public" }, "expect": "block" },
+    { "name": "MCP make file public", "tool_name": "mcp__drive__make_file_public", "tool_input": { "file_id": "f1" }, "expect": "block" },
+    { "name": "share a file", "tool_name": "mcp__google_drive__share_file", "tool_input": { "file_id": "f1", "email": "a@other.org" }, "expect": "ask" },
+    { "name": "add collaborator", "tool_name": "mcp__github__add_collaborator", "tool_input": { "username": "octo" }, "expect": "ask" },
+    { "name": "chmod 777", "tool_name": "Bash", "tool_input": { "command": "chmod -R 777 storage" }, "expect": "ask" },
+    { "name": "iam attach", "tool_name": "Bash", "tool_input": { "command": "aws iam attach-role-policy --role-name app --policy-arn arn:aws:iam::123:policy/s3-read" }, "expect": "ask" },
+    { "name": "list collaborators", "tool_name": "mcp__github__list_collaborators", "tool_input": {}, "expect": "none" },
+    { "name": "chmod +x", "tool_name": "Bash", "tool_input": { "command": "chmod +x run.sh" }, "expect": "none" },
+    { "name": "get user", "tool_name": "mcp__okta__get_user", "tool_input": { "id": "u1" }, "expect": "none" }
+  ]
+}

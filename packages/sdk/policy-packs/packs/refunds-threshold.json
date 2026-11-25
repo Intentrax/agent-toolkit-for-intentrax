@@ -1,0 +1,121 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.refunds-threshold",
+  "pack_version": "0.1.0",
+  "title": "Refunds above a set amount",
+  "summary": "Lets small refunds run, asks before refunds above approval_above_minor, blocks refunds above deny_above_minor, and asks when the amount cannot be read (a full refund).",
+  "scan": {
+    "category": "financial",
+    "rule_ids": ["scan.category.financial", "scan.category.shell"],
+    "name_tokens": ["refund", "refunds"]
+  },
+  "params": {
+    "approval_above_minor": {
+      "type": "INTEGER",
+      "default": 5000,
+      "min": 0,
+      "max": 1000000000000,
+      "description": "Refunds above this amount, in minor units (5000 = 50.00), need approval."
+    },
+    "deny_above_minor": {
+      "type": "INTEGER",
+      "default": 50000,
+      "min": 1,
+      "max": 1000000000000,
+      "description": "Refunds above this amount, in minor units (50000 = 500.00), are blocked."
+    }
+  },
+  "param_rules": [{ "less_than": ["approval_above_minor", "deny_above_minor"] }],
+  "matchers": [
+    {
+      "matcher_id": "refund-with-amount",
+      "tool": {
+        "token_groups": [["refund", "refunds"]],
+        "tokens_none": ["get", "list", "read", "search", "retrieve", "fetch", "describe", "show", "view", "find", "status"]
+      },
+      "action": "payments.refund",
+      "facts": {
+        "amount_minor": { "pointers": ["/amount", "/amount_minor", "/amount_cents", "/refund_amount"], "type": "INTEGER", "required": true },
+        "resource": { "pointers": ["/charge", "/payment_intent", "/payment_id", "/order_id"], "type": "STRING" }
+      }
+    },
+    {
+      "matcher_id": "refund-amount-unknown",
+      "tool": {
+        "token_groups": [["refund", "refunds"]],
+        "tokens_none": ["get", "list", "read", "search", "retrieve", "fetch", "describe", "show", "view", "find", "status"]
+      },
+      "action": "payments.refund_amount_unknown",
+      "facts": {
+        "resource": { "pointers": ["/charge", "/payment_intent", "/payment_id", "/order_id"], "type": "STRING" }
+      }
+    },
+    {
+      "matcher_id": "shell-refund",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])stripe\\s+refunds\\s+create\\b|api\\.stripe\\.com/v1/refunds" }],
+      "action": "payments.refund_amount_unknown"
+    }
+  ],
+  "actions": {
+    "payments.refund": { "decisions": ["allow", "ask", "block"], "why": "Refunds move money out; small ones run, larger ones need a person, and the largest are done by a person." },
+    "payments.refund_amount_unknown": { "decisions": ["ask"], "why": "With no amount the payment provider usually refunds the whole charge, so a person checks it." }
+  },
+  "policy": {
+    "policy_id": "intentrax.refunds-threshold",
+    "policy_version": "0.1.0",
+    "rules": [
+      {
+        "rule_id": "rule.approve-refund-amount-unknown",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "payments.refund_amount_unknown" }],
+        "constraints": [{ "constraint_id": "constraint.refunds-threshold.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 40
+      },
+      {
+        "rule_id": "rule.deny-refund-above-limit",
+        "effect": "DENY",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "payments.refund" }, { "field": "eeo.request.amount_minor", "operator": "GREATER_THAN", "value": { "param": "deny_above_minor" } }],
+        "constraints": [],
+        "priority": 30
+      },
+      {
+        "rule_id": "rule.approve-refund-above-threshold",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "payments.refund" }, { "field": "eeo.request.amount_minor", "operator": "GREATER_THAN", "value": { "param": "approval_above_minor" } }],
+        "constraints": [{ "constraint_id": "constraint.refunds-threshold.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 20
+      },
+      {
+        "rule_id": "rule.allow-small-refund",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "payments.refund" }],
+        "constraints": [],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.refunds-threshold.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "Someone in finance or support operations who may approve refunds."
+  },
+  "limits": [
+    "Amounts are compared in minor units with no currency conversion: 5000 is 50.00 USD and also 5000 JPY.",
+    "The amount must be an integer in the tool input (/amount, /amount_minor, /amount_cents or /refund_amount). A decimal string such as \"15.00\" is a derivation error and is blocked (fail closed).",
+    "Refund tools are found by the word refund in the tool name; a refund done by a generic API tool is not matched."
+  ],
+  "examples": [
+    { "name": "small refund", "tool_name": "mcp__stripe__create_refund", "tool_input": { "charge": "ch_1", "amount": 1500 }, "expect": "allow" },
+    { "name": "refund above the approval threshold", "tool_name": "mcp__stripe__create_refund", "tool_input": { "charge": "ch_1", "amount": 20000 }, "expect": "ask" },
+    { "name": "refund above the deny limit", "tool_name": "mcp__stripe__create_refund", "tool_input": { "payment_intent": "pi_1", "amount": 90000 }, "expect": "block" },
+    { "name": "full refund (no amount)", "tool_name": "mcp__stripe__create_refund", "tool_input": { "charge": "ch_1" }, "expect": "ask" },
+    { "name": "custom thresholds", "tool_name": "issueRefund", "tool_input": { "order_id": "o-9", "amount_cents": 2000 }, "params": { "approval_above_minor": 100, "deny_above_minor": 1000 }, "expect": "block" },
+    { "name": "decimal string amount", "tool_name": "mcp__shop__refund_order", "tool_input": { "order_id": "o-9", "amount": "15.00" }, "expect": "block" },
+    { "name": "stripe cli refund", "tool_name": "Bash", "tool_input": { "command": "stripe refunds create --charge=ch_1" }, "expect": "ask" },
+    { "name": "exactly at the threshold", "tool_name": "mcp__stripe__create_refund", "tool_input": { "charge": "ch_1", "amount": 5000 }, "expect": "allow" },
+    { "name": "list refunds", "tool_name": "mcp__stripe__list_refunds", "tool_input": { "limit": 10 }, "expect": "none" },
+    { "name": "create customer", "tool_name": "mcp__stripe__create_customer", "tool_input": { "email": "a@example.com" }, "expect": "none" }
+  ]
+}

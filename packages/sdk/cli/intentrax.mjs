@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildAgentGatewayAdmissionEnvelope, buildLegacyVerificationAssessment, compilePolicyDocument, deriveAssuranceVerdict, evaluateCompiledPolicy, policyReevaluationMismatches } from "../index.js";
 
-const VERSION = "1.9.0";
+const VERSION = "1.10.0";
 const ADMISSION_SCHEMA_VERSION = "intentrax.runtime.agent_admission_request/1.0";
 const INIT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_init/1.0";
 const ACTION_RECEIPT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_action_receipt/1.0";
@@ -273,6 +273,24 @@ async function main(argv) {
     const { scanMain } = await import("../scan/cli.mjs");
     return scanMain([subject, ...rest].filter((value) => value !== undefined));
   }
+  if (command === "policy") {
+    // Open policy packs: list, show, hash, validate, init --from-scan, check.
+    // Local and static; nothing is run or sent. See policy-packs/README.md.
+    const { policyMain } = await import("../policy-packs/cli.mjs");
+    return policyMain([subject, ...rest].filter((value) => value !== undefined));
+  }
+  if (command === "approve") {
+    // Sign a pre-approval (intentrax.approval/0.1) with a local, human APPROVER
+    // key, or generate one (keygen). Local only: nothing is sent. See approve/README.md.
+    const [{ runApprove }, { ApproveError }] = await Promise.all([import("../approve/cli.mjs"), import("../approve/approve.mjs")]);
+    try {
+      return await runApprove([subject, ...rest].filter((value) => value !== undefined));
+    } catch (error) {
+      if (!(error instanceof ApproveError)) throw error;
+      console.error(`intentrax approve: ${error.message}`);
+      return 1;
+    }
+  }
   if (command === "check-init") {
     const options = parseCheckInitOptions([subject, ...rest].filter((value) => value !== undefined));
     const output = await checkInitCommand(options);
@@ -292,8 +310,22 @@ async function main(argv) {
     if (options.tlogTrust !== "") {
       options.tlogModule = await import("../tlog/index.mjs");
     }
+    // Signed pre-approval (specs 01–03): the preapproval/ and envelope/
+    // modules load only when the proof, a key set or a flag needs them, so
+    // copies of this CLI without those directories keep working on every
+    // other proof.
+    if (needsPreapprovalModules(subject, options)) {
+      try {
+        options.preapprovalModule = await import("../preapproval/index.mjs");
+        options.envelopeModule = await import("../envelope/index.mjs");
+      } catch (error) {
+        fail(`this copy of the CLI cannot verify signed pre-approval records (preapproval/ or envelope/ is missing): ${stableErrorMessage(error)}`);
+      }
+    }
     const output = verifyProofExportCommand(subject, options);
-    const exitCode = output.status === "PASS" || output.status === "SANDBOX_NON_TRUST_BEARING" ? 0 : SIGNER_TRUST_EXIT_CODE;
+    const exitCode = output.status === "PASS" || output.status === "SANDBOX_NON_TRUST_BEARING"
+      ? 0
+      : output.status === "APPROVAL_EVIDENCE_INVALID" ? 2 : SIGNER_TRUST_EXIT_CODE;
     if (options.json) {
       console.log(JSON.stringify(output, null, 2));
     } else if (output.status === "PASS") {
@@ -305,6 +337,9 @@ async function main(argv) {
       console.log(assessmentTable(output.verification_assessment));
     }
     if (exitCode !== 0) {
+      if (output.status === "APPROVAL_EVIDENCE_INVALID") {
+        console.error(`intentrax: the proof binds approval evidence that does not check out (${output.approval_evidence.filter((check) => check.status === "INVALID").map((check) => check.code).join(",")}); the sealed approval or rejection must not be relied on.`);
+      }
       if (output.transparency?.status === "FAILED") {
         console.error(transparencyFailureMessage(output));
       }
@@ -1114,6 +1149,9 @@ function parseVerifyProofOptions(args) {
     policyDocuments: [],
     tlogTrust: "",
     tlogBundle: "",
+    tenantKeys: [],
+    approverSets: [],
+    pinDirectoryHeads: [],
   };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -1121,6 +1159,16 @@ function parseVerifyProofOptions(args) {
       options.json = true;
     } else if (arg === "--report-out") {
       options.reportOut = requireValue(args, ++index, arg);
+    } else if (arg === "--tenant-keys") {
+      options.tenantKeys.push(requireValue(args, ++index, arg));
+    } else if (arg === "--approver-set") {
+      options.approverSets.push(requireValue(args, ++index, arg));
+    } else if (arg === "--pin-directory-head") {
+      const head = requireValue(args, ++index, arg);
+      if (!/^[0-9a-f]{64}$/.test(head)) {
+        fail("--pin-directory-head needs a tenant key directory head: 64 lowercase hex digits");
+      }
+      options.pinDirectoryHeads.push(head);
     } else if (arg === "--trusted-keys") {
       options.trustedKeys.push(requireValue(args, ++index, arg));
     } else if (arg === "--policy-document") {
@@ -1160,6 +1208,32 @@ function parseVerifyPDFReceiptOptions(args) {
   return options;
 }
 
+// Markers of the signed pre-approval formats (specs 01–03) in a proof export
+// or a key set. Any match, or any pre-approval flag, loads the preapproval
+// and envelope modules; a false positive only loads them.
+const PREAPPROVAL_MARKERS = Object.freeze([
+  "admission_binding",
+  "intentrax.aep.policy_binding/1.2",
+  "\"attachments\"",
+  "\"disclosures\"",
+  "intentrax.trust.published_key_set/1.2",
+]);
+
+function needsPreapprovalModules(proofExportPath, options) {
+  if (options.tenantKeys.length > 0 || options.approverSets.length > 0 || options.pinDirectoryHeads.length > 0) return true;
+  const paths = [...(proofExportPath ? [proofExportPath] : []), ...options.trustedKeys];
+  for (const path of paths) {
+    let text;
+    try {
+      text = readFileSync(resolve(path), "utf8");
+    } catch {
+      continue; // reported by the command itself
+    }
+    if (PREAPPROVAL_MARKERS.some((marker) => text.includes(marker))) return true;
+  }
+  return false;
+}
+
 function verifyProofExportCommand(proofExportPath, options) {
   if (!proofExportPath) {
     fail("verify-proof requires a proof export JSON path");
@@ -1169,11 +1243,45 @@ function verifyProofExportCommand(proofExportPath, options) {
   if (containsForbiddenPrivateMarker(source)) {
     fail("proof export contains private material marker");
   }
-  const proofExport = parseSingleJSON(source, "proof export");
-  const keySets = loadPublishedKeySets(options.trustedKeys);
+  let proofExport = parseSingleJSON(source, "proof export");
+  const pa = options.preapprovalModule ?? null;
+  let preapproval = null;
+  if (pa !== null) {
+    // Strict parse first: duplicate member names (for example inside
+    // disclosed arguments) are refused, never collapsed.
+    try {
+      options.envelopeModule.parseJson(source);
+    } catch (error) {
+      fail(`proof export is not strict JSON: ${stableErrorMessage(error)}`);
+    }
+    const exportHadExtras = isRecord(proofExport) && (Object.hasOwn(proofExport, "attachments") || Object.hasOwn(proofExport, "disclosures"));
+    let extras;
+    try {
+      // The unsigned attachments and disclosures come off before the lookup
+      // is checked, so result_hash is computed exactly as before.
+      ({ lookup: proofExport, extras } = pa.splitProofExport(proofExport));
+    } catch (error) {
+      fail(`proof export verification failed closed: ${stableErrorMessage(error)}`);
+    }
+    const readDocument = (path, label) => {
+      const text = readFileSync(resolve(path), "utf8");
+      if (containsForbiddenPrivateMarker(text)) fail(`${label} contains private material marker`);
+      return text;
+    };
+    preapproval = {
+      module: pa,
+      envelope: options.envelopeModule,
+      extras,
+      exportHadExtras,
+      tenantKeyDocuments: options.tenantKeys.map((path) => readDocument(path, "tenant key directory")),
+      approverSetDocuments: options.approverSets.map((path) => readDocument(path, "approver set")),
+      pinnedDirectoryHeads: options.pinDirectoryHeads,
+    };
+  }
+  const keySets = loadPublishedKeySets(options.trustedKeys, pa);
   const policyDocuments = options.policyDocuments.map((path) => readFileSync(resolve(path), "utf8"));
   const transparency = loadTransparencyInputs(options);
-  const report = buildLocalProofVerificationReport(proofExport, resolvedProofExportPath, resolve(options.reportOut), keySets, policyDocuments, transparency);
+  const report = buildLocalProofVerificationReport(proofExport, resolvedProofExportPath, resolve(options.reportOut), keySets, policyDocuments, transparency, preapproval);
   const reportData = JSON.stringify(report, null, 2) + "\n";
   mkdirSync(dirname(resolve(options.reportOut)), { recursive: true });
   writeFileSync(resolve(options.reportOut), reportData, { mode: 0o600 });
@@ -1291,7 +1399,7 @@ function transparencyFailureMessage(report) {
   return `intentrax: the transparency-log inclusion bundle did not verify against the pinned trust document (${codes}); this proof is NOT shown to be in the log and the bundle must not be relied on.`;
 }
 
-function buildLocalProofVerificationReport(proofExport, proofExportPath, reportPath, keySets, policyDocuments = [], transparency = null) {
+function buildLocalProofVerificationReport(proofExport, proofExportPath, reportPath, keySets, policyDocuments = [], transparency = null, preapproval = null) {
   const invalid = validateProofLookupExport(proofExport);
   if (invalid.length > 0) {
     fail(`proof export verification failed closed: ${invalid.join(",")}`);
@@ -1305,18 +1413,73 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
   // The signed AEP bytes are verified above; a policy binding sealed in them
   // (aep.policy_binding, AEP 1.1 policy-binding profile) must be well formed
   // and is reported as sealed. Absence is never a failure.
-  const policyBinding = sealedPolicyBinding(record.canonical_aep_json);
+  const pa = preapproval === null ? null : preapproval.module;
+  const aepJSON = record.canonical_aep_json;
+  // policy_binding/1.2 (spec 03) is parsed by the preapproval module; 1.1 by
+  // the parser below, unchanged. Without the module a 1.2 binding fails
+  // closed as an unknown profile.
+  const policyBinding = pa !== null && sealedPolicyBindingProfile(aepJSON) === pa.POLICY_BINDING_PROFILE_V12
+    ? pa.sealedPolicyBindingV12(JSON.parse(aepJSON).policy_binding)
+    : sealedPolicyBinding(aepJSON);
   if (policyBinding.invalid.length > 0) {
     fail(`proof export verification failed closed: ${policyBinding.invalid.join(",")}`);
   }
+  const v12 = pa !== null && policyBinding.binding !== null && policyBinding.binding.binding_profile === pa.POLICY_BINDING_PROFILE_V12;
+  // Signed pre-approval admission records (spec 01 §3.4): a present
+  // admission_binding must be well formed and consistent with the execution
+  // id and the policy binding, or verification fails closed.
+  let admissionBinding = null;
+  let opened = null;
+  if (pa !== null) {
+    const sealed = pa.sealedAdmissionBinding(aepJSON);
+    if (sealed.invalid.length > 0) {
+      fail(`proof export verification failed closed: ${sealed.invalid.join(",")}`);
+    }
+    admissionBinding = sealed.binding;
+    const inconsistency = pa.checkAdmissionConsistency(aepJSON, admissionBinding, policyBinding.binding);
+    if (inconsistency !== "") {
+      fail(`proof export verification failed closed: admission record inconsistent: ${inconsistency}`);
+    }
+    try {
+      opened = pa.openDisclosures(admissionBinding, policyBinding.binding, preapproval.extras);
+    } catch (error) {
+      fail(`proof export verification failed closed: disclosures: ${stableErrorMessage(error)}`);
+    }
+  }
+  const disclosedPolicyDocuments = (preapproval?.extras.policyDocuments ?? []).map((document) => (typeof document === "string" ? document : JSON.stringify(document)));
+  const allPolicyDocuments = [...policyDocuments, ...disclosedPolicyDocuments];
   // Re-run the sealed evaluation (P1-C step 2); a disagreement fails closed.
-  const policyReevaluation = reevaluateSealedPolicyBinding(record.canonical_aep_json, policyBinding.binding, policyDocuments);
-  const trust = classifySignerTrust(signatures.signers, keySets);
+  const policyReevaluation = v12 && policyBinding.binding.evaluated_facts.lane === "ADMISSION"
+    ? reevaluateAdmissionPolicyBinding(aepJSON, policyBinding.binding, allPolicyDocuments, pa, opened)
+    : reevaluateSealedPolicyBinding(aepJSON, policyBinding.binding, allPolicyDocuments);
+  // Approval evidence (spec 02 §5): every 1.2 constraint sealed SATISFIED or
+  // REJECTED is re-checked against the attached approvals.
+  const approvalEvidence = pa === null ? [] : pa.checkApprovalEvidence(record.tenant_id, admissionBinding, policyBinding.binding, opened.argumentsHash, {
+    attachments: preapproval.extras.attachments,
+    approverSets: [...preapproval.extras.approverSets, ...preapproval.approverSetDocuments],
+    directories: [...preapproval.extras.directories, ...preapproval.tenantKeyDocuments],
+    pinnedDirectoryHeads: preapproval.pinnedDirectoryHeads,
+    directoryKeys: envelopeKeyResolver(keySets, "TENANT_KEY_DIRECTORY", preapproval.envelope),
+    approvalServiceKeys: envelopeKeyResolver(keySets, "APPROVAL_SERVICE", preapproval.envelope),
+  });
+  // A sealed admission decision carries the record's signing time.
+  const signingTime = admissionBinding === null ? null : preapproval.envelope.parseTime(admissionBinding.decided_at);
+  const trust = classifySignerTrust(signatures.signers, keySets, signingTime, preapproval === null ? null : preapproval.envelope.parseTime);
   const tlog = transparency === null ? null : buildTransparencyReport(record.record_hash, transparency);
-  const legacyAssessment = buildLegacyVerificationAssessment({ signerTrust: trust.signer_trust, keySetSupplied: keySets.length > 0, policyBinding: policyBinding.binding, policyReevaluation });
+  const assessmentInput = { signerTrust: trust.signer_trust, keySetSupplied: keySets.length > 0, policyBinding: policyBinding.binding, policyReevaluation };
+  const legacyAssessment = pa === null
+    ? buildLegacyVerificationAssessment(assessmentInput)
+    : pa.buildPreapprovalAssessment({ ...assessmentInput, admissionBinding, approvalEvidence });
   // A FAILED transparency check is never hidden: status names it and the
-  // exit code is non-zero, whatever the signer outcome.
+  // exit code is non-zero, whatever the signer outcome. Neither is bad
+  // approval evidence bound by the record (spec 02 §5.2).
   const signerStatus = trust.signer_trust === "TRUSTED" ? "PASS" : trust.signer_trust;
+  const approvalEvidenceInvalid = approvalEvidence.some((check) => check.status === "INVALID");
+  const policyStatement = policyBinding.binding === null
+    ? ""
+    : v12
+      ? [pa.policyBindingV12Statement(policyBinding.binding), ...approvalEvidence.filter((check) => check.status === "VERIFIED").map((check) => check.statement)].join(" ")
+      : policyBindingStatement(policyBinding.binding);
   const withoutHash = {
     schema_version: LOCAL_PROOF_VERIFICATION_SCHEMA_VERSION,
     verifier_version: LOCAL_PROOF_VERIFIER_VERSION,
@@ -1324,7 +1487,7 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
     // min_trusted_signers distinct trusted keys signed. Valid signatures from
     // keys you have not chosen to trust prove nothing about who signed, so they
     // never yield PASS.
-    status: tlog !== null && tlog.status === "FAILED" ? "TRANSPARENCY_FAILED" : signerStatus,
+    status: approvalEvidenceInvalid ? "APPROVAL_EVIDENCE_INVALID" : tlog !== null && tlog.status === "FAILED" ? "TRANSPARENCY_FAILED" : signerStatus,
     signer_trust: trust.signer_trust,
     trust_bearing: trust.signer_trust === "TRUSTED",
     signature_verification: {
@@ -1357,12 +1520,17 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
       ? {}
       : {
         policy_binding: policyBinding.binding,
-        policy_binding_statement: policyBindingStatement(policyBinding.binding),
+        policy_binding_statement: policyStatement,
         // MATCH when the sealed evaluation was re-run and came out identical;
         // NOT_RECHECKED (with a reason) when it could not be re-run. Never
         // silently passes: a re-run that disagrees fails verification.
         policy_reevaluation: policyReevaluation,
       }),
+    // Signed pre-approval (specs 01–03; same members as the Go verifier),
+    // each present only when it applies, so every other report is unchanged.
+    ...(admissionBinding === null ? {} : { admission_binding: admissionBinding, admission_binding_statement: pa.admissionBindingStatement(admissionBinding) }),
+    ...(approvalEvidence.length === 0 ? {} : { approval_evidence: approvalEvidence }),
+    ...(preapproval === null || !preapproval.exportHadExtras ? {} : { disclosures: opened.report }),
     hash_algorithm: "SHA-256",
     boundary_assertions: {
       offline_verifier_used: true,
@@ -1455,6 +1623,96 @@ function resolvePolicyDocument(sourcePolicyHash, allowedEventFields, policyDocum
     }
   }
   return null;
+}
+
+// The binding_profile of a sealed policy binding, or "" when there is none.
+function sealedPolicyBindingProfile(canonicalAEPJSON) {
+  try {
+    const aep = JSON.parse(canonicalAEPJSON);
+    return isRecord(aep) && isRecord(aep.policy_binding) && typeof aep.policy_binding.binding_profile === "string" ? aep.policy_binding.binding_profile : "";
+  } catch {
+    return "";
+  }
+}
+
+// Re-runs a policy_binding/1.2 evaluation on the ADMISSION lane (spec 03 §6):
+// the event is rebuilt from plaintext facts plus the facts and event salt the
+// export's disclosures opened, and re-run with the tenant request profile.
+// Withheld facts without openings are NOT_RECHECKED / FACTS_WITHHELD.
+function reevaluateAdmissionPolicyBinding(canonicalAEPJSON, binding, policyDocuments, pa, opened) {
+  let rebuilt;
+  try {
+    rebuilt = pa.admissionPolicyEvent(canonicalAEPJSON, binding, opened === null ? { facts: {}, salt: "" } : { facts: opened.facts, salt: opened.salt });
+  } catch (error) {
+    fail(`proof export verification failed closed: policy re-evaluation: ${stableErrorMessage(error)}`);
+  }
+  if (rebuilt.notRechecked) return { status: "NOT_RECHECKED", reason: rebuilt.notRechecked };
+  const resolved = resolvePolicyDocument(binding.source_policy_hash, rebuilt.allowedEventFields, policyDocuments);
+  if (resolved === null) return { status: "NOT_RECHECKED", reason: "POLICY_SOURCE_UNAVAILABLE" };
+  let recomputed;
+  try {
+    recomputed = evaluateCompiledPolicy(resolved.compiled, rebuilt.event);
+  } catch (error) {
+    fail(`proof export verification failed closed: policy re-evaluation failed: ${error.message}`);
+  }
+  const mismatches = policyReevaluationMismatches(binding, recomputed);
+  if (mismatches.length > 0) {
+    fail(`proof export verification failed closed: policy re-evaluation mismatch: ${mismatches.join(",")}`);
+  }
+  return { status: "MATCH", policy_source: resolved.source };
+}
+
+// Envelope signers of one purpose (TENANT_KEY_DIRECTORY, APPROVAL_SERVICE),
+// pinned by trust-bearing keys of that purpose in published_key_set/1.2 sets,
+// or null when no set pins any. The same key may appear in several sets (the
+// bundled ones, --trusted-keys). Every entry for the same key_id + key_version
+// in ANY supplied set counts, whatever its purpose, trust_bearing or schema:
+// - a different public key or a different purpose resolves to no key;
+// - any revocation applies: KEY_COMPROMISE, or a revocation without
+//   revoked_at (every 1.0/1.1 one), applies at every signing time, otherwise
+//   the earliest revoked_at;
+// - the validity window is the intersection of the 1.2 windows.
+function envelopeKeyResolver(keySets, purpose, envelope) {
+  const isV12 = (set) => set.schema_version === "intentrax.trust.published_key_set/1.2";
+  const entryPurpose = (key, set) => (isV12(set) && typeof key.purpose === "string" && key.purpose !== "" ? key.purpose : "AEP_RECORD");
+  if (!keySets.some((set) => isV12(set) && set.keys.some((key) => key.trust_bearing === true && entryPurpose(key, set) === purpose))) return null;
+  const later = (a, b) => (a === undefined ? b : b === undefined ? a : a > b ? a : b);
+  const earlier = (a, b) => (a === undefined ? b : b === undefined ? a : a < b ? a : b);
+  const time = (set, value) => (isV12(set) && typeof value === "string" && value !== "" ? envelope.parseTime(value) : undefined);
+  return {
+    resolveKey(keyId, keyVersion) {
+      const entries = [];
+      for (const set of keySets) {
+        for (const key of set.keys) {
+          if (key.key_id === keyId && key.key_version === keyVersion) entries.push({ key, set });
+        }
+      }
+      const trusted = entries.filter(({ key, set }) => isV12(set) && key.trust_bearing === true && entryPurpose(key, set) === purpose);
+      if (trusted.length === 0) return undefined;
+      const publicKeyHex = trusted[0].key.public_key_material;
+      if (entries.some(({ key, set }) => key.public_key_material !== publicKeyHex || entryPurpose(key, set) !== purpose)) return undefined;
+      // The least trusting entry decides: any non-trust-bearing listing of the
+      // same key, revoked or not, leaves it untrusted (as for AEP signers).
+      if (entries.some(({ key }) => key.trust_bearing !== true)) return undefined;
+      let validFrom;
+      let validUntil;
+      let revokedAt;
+      let revocationReason = "";
+      for (const { key, set } of entries) {
+        validFrom = later(validFrom, time(set, key.valid_from));
+        validUntil = earlier(validUntil, time(set, key.valid_until));
+        if (key.status !== "REVOKED") continue;
+        const at = time(set, key.revoked_at);
+        if (at === undefined || key.revocation_reason === "KEY_COMPROMISE") {
+          revocationReason = "KEY_COMPROMISE";
+        } else if (revocationReason !== "KEY_COMPROMISE" && (revokedAt === undefined || at < revokedAt)) {
+          revokedAt = at;
+          revocationReason = key.revocation_reason;
+        }
+      }
+      return envelope.pinnedKeys([{ keyId, keyVersion, publicKeyHex, purpose, validFrom, validUntil, revokedAt, revocationReason }]).resolveKey(keyId, keyVersion);
+    },
+  };
 }
 
 function reevaluateSealedPolicyBinding(canonicalAEPJSON, binding, policyDocuments) {
@@ -1767,31 +2025,39 @@ function validateSignerRoster(bundle, signatureBundle, quorum, payload) {
 // A published key set pins who may sign: production keys (trust_bearing) or
 // sandbox keys (not trust-bearing). The SDK ships both published sets; extra sets
 // (or revocations) can be supplied with --trusted-keys.
-function loadPublishedKeySets(trustedKeyPaths) {
+// pa is the preapproval module when loaded: it adds published_key_set/1.2
+// (spec 00 §5, per-key purpose and validity). Without it a 1.2 set is an
+// unknown schema and fails closed, as before.
+function loadPublishedKeySets(trustedKeyPaths, pa = null) {
   const sets = [];
   for (const url of BUILT_IN_KEY_SET_URLS) {
     if (existsSync(url)) {
-      sets.push(parsePublishedKeySet(readFileSync(url, "utf8"), `built-in:trust/${url.pathname.split("/").pop()}`));
+      sets.push(parsePublishedKeySet(readFileSync(url, "utf8"), `built-in:trust/${url.pathname.split("/").pop()}`, pa));
     }
   }
   for (const keySetPath of trustedKeyPaths) {
-    sets.push(parsePublishedKeySet(readFileSync(resolve(keySetPath), "utf8"), resolve(keySetPath)));
+    sets.push(parsePublishedKeySet(readFileSync(resolve(keySetPath), "utf8"), resolve(keySetPath), pa));
   }
   return sets;
 }
 
-function parsePublishedKeySet(source, origin) {
+function parsePublishedKeySet(source, origin, pa = null) {
   if (containsForbiddenPrivateMarker(source)) {
     fail(`trusted key set contains private material marker: ${origin}`);
   }
   const set = parseSingleJSON(source, "trusted key set");
   const invalid = [];
-  if (!isRecord(set) || ![PUBLISHED_KEY_SET_SCHEMA_VERSION, PUBLISHED_KEY_SET_SCHEMA_VERSION_V1].includes(set.schema_version)) invalid.push("schema_version");
+  const v12 = pa !== null && isRecord(set) && set.schema_version === pa.PUBLISHED_KEY_SET_SCHEMA_VERSION_V12;
+  if (!isRecord(set) || !(v12 || [PUBLISHED_KEY_SET_SCHEMA_VERSION, PUBLISHED_KEY_SET_SCHEMA_VERSION_V1].includes(set.schema_version))) invalid.push("schema_version");
   if (isRecord(set) && !stableNonEmpty(set.key_set_id)) invalid.push("key_set_id");
   if (!isRecord(set) || !Array.isArray(set.keys) || set.keys.length === 0) invalid.push("keys");
   if (isRecord(set) && Array.isArray(set.keys)) {
     const keyIds = new Set(set.keys.filter(isRecord).map((key) => key.key_id));
-    if (set.schema_version === PUBLISHED_KEY_SET_SCHEMA_VERSION) {
+    if (v12) {
+      // 1.2: min_trusted_signers counts AEP_RECORD key_ids only (spec 00 §5).
+      const aepKeyIds = new Set(set.keys.filter((key) => isRecord(key) && pa.anchorPurpose(key) === "AEP_RECORD").map((key) => key.key_id));
+      if (!Number.isInteger(set.min_trusted_signers) || set.min_trusted_signers < 1 || set.min_trusted_signers > aepKeyIds.size) invalid.push("min_trusted_signers");
+    } else if (set.schema_version === PUBLISHED_KEY_SET_SCHEMA_VERSION) {
       // The policy must be satisfiable by this set's own keys.
       if (!Number.isInteger(set.min_trusted_signers) || set.min_trusted_signers < 1 || set.min_trusted_signers > keyIds.size) invalid.push("min_trusted_signers");
     } else if (set.schema_version === PUBLISHED_KEY_SET_SCHEMA_VERSION_V1) {
@@ -1801,7 +2067,16 @@ function parsePublishedKeySet(source, origin) {
     }
   }
   if (isRecord(set) && Array.isArray(set.keys)) {
+    const seenIdVersions = new Set();
     for (const [index, key] of set.keys.entries()) {
+      // One entry per key_id + key_version: a duplicate would let the first
+      // match hide a later revocation or a different public key (the Go
+      // verifier refuses it as duplicate_key_id_version).
+      if (isRecord(key)) {
+        const idVersion = `${key.key_id}\u0000${key.key_version}`;
+        if (seenIdVersions.has(idVersion)) invalid.push("duplicate_key_id_version");
+        seenIdVersions.add(idVersion);
+      }
       if (!isRecord(key)
         || !stableNonEmpty(key.key_id)
         || !stableNonEmpty(key.key_version)
@@ -1811,6 +2086,15 @@ function parsePublishedKeySet(source, origin) {
         || !["ACTIVE", "RETIRED", "REVOKED"].includes(key.status)) {
         invalid.push(`keys.${index}`);
       }
+      // environment is production or sandbox, and a sandbox key is never
+      // trust-bearing (as in the Go verifier).
+      if (isRecord(key) && !["production", "sandbox"].includes(key.environment)) invalid.push(`keys.${index}.environment`);
+      if (isRecord(key) && key.environment === "sandbox" && key.trust_bearing === true) invalid.push(`keys.${index}.trust_bearing`);
+      // 1.2 members (purpose, windows, revocation metadata) are valid only in a
+      // 1.2 set; a 1.0/1.1 set carrying them is invalid (as in the Go
+      // verifier). Checked whether or not the preapproval module is loaded.
+      if (isRecord(key) && !v12 && PUBLISHED_KEY_SET_V12_MEMBERS.some((name) => Object.hasOwn(key, name) && key[name] !== "")) invalid.push(`keys.${index}.purpose`);
+      if (v12 && isRecord(key)) invalid.push(...pa.keySetV12KeyInvalidFields(key, true, `keys.${index}.`));
     }
   }
   if (invalid.length > 0) {
@@ -1824,42 +2108,114 @@ function parsePublishedKeySet(source, origin) {
     key_set_id: set.key_set_id,
     environment: environments.length === 1 ? environments[0] : "mixed",
     source: origin,
-    min_trusted_signers: set.schema_version === PUBLISHED_KEY_SET_SCHEMA_VERSION ? set.min_trusted_signers : 1,
+    min_trusted_signers: set.schema_version === PUBLISHED_KEY_SET_SCHEMA_VERSION || v12 ? set.min_trusted_signers : 1,
+    schema_version: set.schema_version,
     keys: set.keys,
   };
 }
 
-function classifySignerTrust(signers, keySets) {
+const PUBLISHED_KEY_SET_V12_MEMBERS = Object.freeze(["purpose", "valid_from", "valid_until", "revoked_at", "revocation_reason"]);
+
+// The purpose a published key anchors: a 1.2 key's own; a 1.0/1.1 key is
+// always AEP_RECORD, whatever members it carries.
+function aepAnchorPurpose(key, set) {
+  if (set.schema_version !== "intentrax.trust.published_key_set/1.2") return "AEP_RECORD";
+  return typeof key.purpose === "string" && key.purpose !== "" ? key.purpose : "AEP_RECORD";
+}
+
+// signingTime (bigint nanoseconds, or null) is the record's sealed signing
+// time: admission_binding.decided_at (spec 01 §3.4). With it, a 1.2
+// AEP_RECORD anchor's valid_from/valid_until window applies (spec 00 §5):
+// any matching entry whose window excludes it makes the signer not valid,
+// whatever other sets say (the strictest entry wins). Records without a
+// sealed signing time cannot be placed in a window, so windows do not apply
+// to them (as in the Go verifier).
+function classifySignerTrust(signers, keySets, signingTime = null, parseTime = null) {
+  // Validity windows and revocation timing are published_key_set/1.2 members:
+  // a 1.0/1.1 entry has no window and its REVOKED applies unconditionally,
+  // whatever fields it carries (the parser also refuses them there).
+  const isV12 = (set) => set.schema_version === "intentrax.trust.published_key_set/1.2";
+  const outsideWindow = (key, set) => {
+    if (!isV12(set) || signingTime === null || parseTime === null) return false;
+    if (typeof key.valid_from === "string" && key.valid_from !== "" && signingTime < parseTime(key.valid_from)) return true;
+    return typeof key.valid_until === "string" && key.valid_until !== "" && signingTime >= parseTime(key.valid_until);
+  };
+  // Whether a REVOKED entry applies to this record (spec 00 §5): KEY_COMPROMISE
+  // applies at every signing time, and so does a revocation without revoked_at
+  // (a 1.0/1.1 key) or a record without a sealed signing time. Any other reason
+  // (SUPERSEDED, CEASED) applies only to records signed at or after revoked_at,
+  // so routine key rotation does not invalidate earlier proofs.
+  const revokedForRecord = (key, set) => {
+    if (key.status !== "REVOKED") return false;
+    if (!isV12(set) || signingTime === null || parseTime === null) return true;
+    if (key.revocation_reason === "KEY_COMPROMISE") return true;
+    if (typeof key.revoked_at !== "string" || key.revoked_at === "") return true;
+    return signingTime >= parseTime(key.revoked_at);
+  };
   const resolved = signers.map((signer) => {
     // Collect every matching anchor across all key sets: a revocation in ANY
     // trusted set must win over an ACTIVE entry in another.
     const matches = [];
+    const otherPurposeMatches = [];
+    let purposeMismatch = false;
+    let notValidAtSigningTime = false;
+    let publicKeyMismatch = false;
     for (const set of keySets) {
       for (const key of set.keys) {
-        if (key.key_id === signer.key_id && key.key_version === signer.key_version && key.public_key_material === signer.public_key_material) {
-          matches.push({ key_set_id: set.key_set_id, environment: key.environment ?? set.environment, trust_bearing: key.trust_bearing, status: key.status });
+        if (key.key_id !== signer.key_id || key.key_version !== signer.key_version) continue;
+        // Another public key under the same key_id + key_version is a conflict:
+        // the signer is not pinned (as the Go verifier's PUBLIC_KEY_MISMATCH).
+        if (key.public_key_material !== signer.public_key_material) {
+          publicKeyMismatch = true;
+          continue;
         }
+        // Only AEP_RECORD anchors pin AEP signers (published_key_set/1.2,
+        // spec 00 §5); a 1.1 or 1.0 key is AEP_RECORD.
+        // An entry of another purpose for the same key is a conflict, and its
+        // revocation still applies (a compromised key is compromised for
+        // every purpose).
+        const entry = { key_set_id: set.key_set_id, environment: key.environment ?? set.environment, trust_bearing: key.trust_bearing, status: key.status, revoked: revokedForRecord(key, set) };
+        if (aepAnchorPurpose(key, set) !== "AEP_RECORD") {
+          purposeMismatch = true;
+          otherPurposeMatches.push(entry);
+          continue;
+        }
+        if (outsideWindow(key, set)) notValidAtSigningTime = true;
+        matches.push(entry);
       }
     }
-    const anchor = matches.find((match) => match.status === "REVOKED")
-      ?? matches.find((match) => match.trust_bearing === true)
-      ?? matches[0]
+    const revokedAnchor = [...matches, ...otherPurposeMatches].find((match) => match.revoked);
+    // The least trusting entry decides: one entry that is not trust-bearing
+    // (a sandbox listing, say) outweighs a trust-bearing one elsewhere.
+    const anchor = revokedAnchor
+      ?? (notValidAtSigningTime || purposeMismatch || publicKeyMismatch ? null : matches.find((match) => match.trust_bearing !== true) ?? matches[0])
       ?? null;
-    return { key_id: signer.key_id, key_version: signer.key_version, public_key_hash: signer.public_key_hash, anchor };
+    return {
+      key_id: signer.key_id, key_version: signer.key_version, public_key_hash: signer.public_key_hash, anchor,
+      // Present only when the signer has no usable AEP_RECORD anchor: an
+      // anchor whose 1.2 validity window excludes the record's signing time,
+      // or the same key also pinned for another purpose (alone or next to an
+      // AEP_RECORD entry).
+      ...(anchor === null && notValidAtSigningTime ? { anchor_match: "NOT_VALID_AT_SIGNING_TIME" } : {}),
+      ...(anchor === null && !notValidAtSigningTime && purposeMismatch ? { anchor_match: "PURPOSE_MISMATCH" } : {}),
+      ...(anchor === null && !notValidAtSigningTime && !purposeMismatch && publicKeyMismatch ? { anchor_match: "PUBLIC_KEY_MISMATCH" } : {}),
+    };
   });
   // The strictest policy wins: every key set that vouches for any signer as
   // trust-bearing contributes its min_trusted_signers, and the maximum applies.
   // Supplying an extra, laxer set cannot lower the bundled production policy.
   let minTrustedSigners = 1;
   for (const set of keySets) {
-    const vouches = set.keys.some((key) => key.trust_bearing === true && key.status !== "REVOKED"
+    const vouches = set.keys.some((key) => key.trust_bearing === true && !revokedForRecord(key, set) && aepAnchorPurpose(key, set) === "AEP_RECORD" && !outsideWindow(key, set)
       && signers.some((signer) => key.key_id === signer.key_id && key.key_version === signer.key_version && key.public_key_material === signer.public_key_material));
     if (vouches) minTrustedSigners = Math.max(minTrustedSigners, set.min_trusted_signers);
   }
   // Versions of one key are one signer.
-  const distinctTrustedSigners = new Set(resolved.filter((signer) => signer.anchor?.trust_bearing === true && signer.anchor.status !== "REVOKED").map((signer) => signer.key_id)).size;
+  const distinctTrustedSigners = new Set(resolved.filter((signer) => signer.anchor?.trust_bearing === true && !signer.anchor.revoked).map((signer) => signer.key_id)).size;
   let signerTrust;
-  if (resolved.some((signer) => signer.anchor?.status === "REVOKED")) signerTrust = "REVOKED_SIGNER";
+  if (resolved.some((signer) => signer.anchor?.revoked === true)) signerTrust = "REVOKED_SIGNER";
+  else if (resolved.some((signer) => signer.anchor_match === "NOT_VALID_AT_SIGNING_TIME")) signerTrust = "SIGNER_KEY_NOT_VALID_AT_SIGNING_TIME";
+  else if (resolved.some((signer) => signer.anchor_match === "PURPOSE_MISMATCH")) signerTrust = "SIGNER_PURPOSE_MISMATCH";
   else if (resolved.length === 0 || resolved.some((signer) => signer.anchor === null)) signerTrust = "UNPINNED_SIGNER";
   else if (resolved.every((signer) => signer.anchor.trust_bearing === true)) {
     signerTrust = distinctTrustedSigners >= minTrustedSigners ? "TRUSTED" : "INSUFFICIENT_TRUSTED_SIGNERS";
@@ -1888,6 +2244,12 @@ function assessmentTable(assessment) {
 function signerTrustMessage(report) {
   if (report.signer_trust === "UNPINNED_SIGNER") {
     return "intentrax: signatures are mathematically valid, but at least one signing key is not in any trusted key set, so this proof does NOT establish who signed it. Pass the key set Intentrax publishes with --trusted-keys <file>.";
+  }
+  if (report.signer_trust === "SIGNER_KEY_NOT_VALID_AT_SIGNING_TIME") {
+    return "intentrax: a signing key of this proof is pinned, but its validity window (published_key_set/1.2) does not cover the record's sealed signing time (decided_at); this proof must not be relied on.";
+  }
+  if (report.signer_trust === "SIGNER_PURPOSE_MISMATCH") {
+    return "intentrax: a signing key of this proof is pinned only for another purpose (published_key_set/1.2); AEP records are trusted only under AEP_RECORD keys, so this proof must not be relied on.";
   }
   if (report.signer_trust === "REVOKED_SIGNER") {
     return "intentrax: a signing key is REVOKED in the trusted key set; this proof must not be relied on.";
@@ -3092,7 +3454,7 @@ function printHelp() {
 Usage:
   intentrax init <adapter> [--dry-run] [--force] [--json] [--output-dir <dir>] [--base-url <url>] [--tenant-id <tenant>]
   intentrax check-init --output-dir <dir> [--json]
-  intentrax verify-proof <proof-export.json> [--trusted-keys <key-set.json>] [--policy-document <policy.json>] [--tlog-trust <transparency-log.json> [--tlog-bundle <proof.tlog.json>]] [--json] [--report-out <file>]
+  intentrax verify-proof <proof-export.json> [--trusted-keys <key-set.json>] [--policy-document <policy.json>] [--tlog-trust <transparency-log.json> [--tlog-bundle <proof.tlog.json>]] [--tenant-keys <directory.json>] [--approver-set <approver-set.json>] [--pin-directory-head <hex>] [--json] [--report-out <file>]
   intentrax verify-pdf-receipt <receipt.pdf> --pdf-hash <X-Intentrax-PDF-Hash> [--json] [--report-out <file>]
   intentrax sandbox [--scenario confirmed|contradicted] [--check <read-only-check.mjs>] [--dir <dir>] [--json]
   intentrax sandbox verify <bundle.json> [--keys <local-key-set.json>] [--issuer-keys <pinned-external-issuers.json>] [--require-external-issuer <issuer>]... [--json]
@@ -3101,6 +3463,10 @@ Usage:
   intentrax mcp pin --server <cmd|url> [--name <name>] [--accept <tool,...> | --replace] [--json]
   intentrax mcp check [--pins <file>] [--name <name>] [--json]
   intentrax mcp proxy [--pins <file>] [--name <name>] [--on-drift block|warn]
+  intentrax policy list|show <pack>|hash <pack>|validate [file]|check --tool <name> [--input <json>] [--json]
+  intentrax policy init --from-scan [dir] [--out <file>] [--environment PROD|STAGING|DEV] [--force]
+  intentrax approve keygen --tenant-id <id> --principal-id <id> --key-id <id> --out <key.json> --registration-out <reg.json>
+  intentrax approve [<admission_request_hash>] --request <envelope.json> --approval-request <pending.json> --key <key.json> --directory <dir.json> --out <approval.json> [--reject] [--json]
 
 Adapters:
   ${Object.keys(ADAPTERS).join(", ")}
@@ -3136,6 +3502,12 @@ Proof export verification:
                                   keys signed than the published key set
                                   requires (signatures may have been stripped)
     REVOKED_SIGNER / MIXED_TRUST 3
+    SIGNER_PURPOSE_MISMATCH    3  a signer is pinned only for another purpose
+                                  (published_key_set/1.2)
+    SIGNER_KEY_NOT_VALID_AT_SIGNING_TIME 3  a signer's 1.2 validity window does
+                                  not cover the record's decided_at
+    APPROVAL_EVIDENCE_INVALID  2  the proof binds approval evidence that does
+                                  not check out
     any integrity or signature failure exits 2 (failed closed)
 
   A proof that seals a policy binding (AEP 1.1) also gets policy_reevaluation:
@@ -3168,6 +3540,23 @@ Proof export verification:
   logged; nothing else changes) or FAILED (status TRANSPARENCY_FAILED,
   non-zero exit). Without --tlog-trust the report is exactly as before.
 
+  Signed pre-approval records (specs 01–03): a proof that seals
+  admission_binding (an admission decision) or policy_binding/1.2 (ENFORCED,
+  the ADMISSION lane, approvals) is checked for consistency and fails closed
+  otherwise. The report adds admission_binding and its statement. A sealed
+  approval or rejection is re-checked against the export's attachments: the
+  approval envelopes, the approver set in force and the tenant key directory.
+  The directory is trusted only through a head you pin
+  (--pin-directory-head) or a TENANT_KEY_DIRECTORY key of a
+  published_key_set/1.2 given with --trusted-keys. Supply directories and
+  approver sets the export does not carry with --tenant-keys and
+  --approver-set. approval_evidence says VERIFIED, NOT_SUPPLIED or
+  NOT_RECHECKED; an approval that was not verified never upgrades
+  AUTHORIZATION. Evidence that does not check out gives status
+  APPROVAL_EVIDENCE_INVALID (exit 2). The export's disclosures (arguments,
+  commitment openings, policy documents) are re-hashed; a mismatch fails
+  closed, and opened facts let the ADMISSION-lane evaluation be re-run.
+
   The SDK ships the production key set (trust/production-key-set.json,
   min_trusted_signers 2) and the sandbox key set (trust/sandbox-key-set.json).
   Add more sets, for example revocations, with --trusted-keys <file>
@@ -3189,6 +3578,20 @@ MCP tool pinning (intentrax mcp --help):
   compares them (0 MATCH, 10 CHANGED, 2 UNCHECKED, 1 usage); proxy blocks
   changed and new tools in a stdio proxy. Covers tool definitions only. It
   does not show that the server's code or behaviour is unchanged.
+
+Policy packs (intentrax policy --help):
+  Open policy packs, one per scan category, each a C2 policy that decides
+  allow, ask or block for an agent's tool call. init --from-scan writes a draft
+  .intentrax/policy.jsonc that selects the packs the scan matched; each pack is
+  pinned by its pack_hash. Facts are read from the tool input on this machine
+  (self-reported); the decision can be re-checked from the policy hash.
+  0 ok, 1 invalid, 2 usage or I/O error.
+
+Approve (intentrax approve --help):
+  Signs an intentrax.approval/0.1 approval or rejection with a local, human
+  APPROVER key after recomputing the request hashes and showing the request.
+  Local only: nothing is sent. keygen makes the key and its registration
+  request. 0 ok, 1 error.
 
 PDF receipt verification:
   verify-pdf-receipt reads downloaded PDF receipt bytes, checks the PDF header,
@@ -3217,6 +3620,8 @@ Examples:
   intentrax scan .
   intentrax mcp pin --name github --server https://api.example.com/mcp --header 'Authorization: Bearer \${GITHUB_TOKEN}'
   intentrax mcp check
+  intentrax policy init --from-scan .
+  intentrax policy check --tool Bash --input '{"command":"git push --force origin main"}'
 `);
 }
 

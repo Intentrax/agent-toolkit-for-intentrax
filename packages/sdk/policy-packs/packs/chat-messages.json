@@ -1,0 +1,67 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.chat-messages",
+  "pack_version": "0.1.0",
+  "title": "Chat and SMS messages",
+  "summary": "Asks before an agent posts to Slack, Discord, Teams, Telegram, WhatsApp or SMS, or calls a chat webhook.",
+  "scan": {
+    "category": "communication",
+    "rule_ids": ["scan.category.communication", "scan.category.shell"],
+    "name_tokens": ["slack", "discord", "telegram", "teams", "whatsapp", "sms", "twilio", "signal", "mattermost", "chat", "intercom", "zendesk", "message", "messages"]
+  },
+  "params": {},
+  "matchers": [
+    {
+      "matcher_id": "chat-send-tool",
+      "tool": {
+        "token_groups": [
+          ["slack", "discord", "telegram", "teams", "whatsapp", "sms", "twilio", "signal", "mattermost", "chat", "intercom", "zendesk"],
+          ["send", "post", "reply", "broadcast", "message", "publish", "dm", "notify"]
+        ],
+        "tokens_none": ["list", "get", "read", "search", "history", "fetch", "view", "draft"]
+      },
+      "action": "messages.send"
+    },
+    {
+      "matcher_id": "chat-webhook",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "hooks\\.slack\\.com/|slack\\.com/api/chat\\.postMessage|api\\.telegram\\.org/bot[^\\s]*/send|discord(app)?\\.com/api/webhooks/|api\\.twilio\\.com/[^\\s]*/Messages" }],
+      "action": "messages.send"
+    }
+  ],
+  "actions": {
+    "messages.send": { "decisions": ["ask"], "why": "A message posted in a channel or sent by SMS is read by people at once and cannot be recalled; a person checks it first." }
+  },
+  "policy": {
+    "policy_id": "intentrax.chat-messages",
+    "policy_version": "0.1.0",
+    "rules": [
+      {
+        "rule_id": "rule.approve-message",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "messages.send" }],
+        "constraints": [{ "constraint_id": "constraint.chat-messages.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.chat-messages.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "The person the agent is acting for."
+  },
+  "limits": [
+    "Every message is asked about; the pack cannot tell a private note from a broadcast to thousands.",
+    "Messaging tools are found by service and verb words in the tool name; a generic HTTP tool posting to a chat API is seen only when the shell calls a known webhook URL."
+  ],
+  "examples": [
+    { "name": "slack post", "tool_name": "mcp__slack__slack_post_message", "tool_input": { "channel_id": "C1", "text": "deploy done" }, "expect": "ask" },
+    { "name": "slack reply", "tool_name": "mcp__slack__slack_reply_to_thread", "tool_input": { "channel_id": "C1", "thread_ts": "1.2", "text": "ok" }, "expect": "ask" },
+    { "name": "twilio sms", "tool_name": "sendSms", "tool_input": { "to": "+15550100", "body": "hi" }, "expect": "ask" },
+    { "name": "slack webhook with curl", "tool_name": "Bash", "tool_input": { "command": "curl -X POST -d '{\"text\":\"hi\"}' https://hooks.slack.com/services/T0/B0/XYZ" }, "expect": "ask" },
+    { "name": "list channels", "tool_name": "mcp__slack__slack_list_channels", "tool_input": {}, "expect": "none" },
+    { "name": "channel history", "tool_name": "mcp__slack__slack_get_channel_history", "tool_input": { "channel_id": "C1" }, "expect": "none" },
+    { "name": "email is another pack", "tool_name": "mcp__gmail__send_email", "tool_input": { "to": "a@example.com" }, "expect": "none" }
+  ]
+}

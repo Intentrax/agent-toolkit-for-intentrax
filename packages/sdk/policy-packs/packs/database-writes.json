@@ -1,0 +1,127 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.database-writes",
+  "pack_version": "0.1.1",
+  "title": "Database writes outside DEV",
+  "summary": "Blocks destructive SQL (DROP, TRUNCATE, DELETE without WHERE, resets) outside DEV and asks before any other database write outside DEV and STAGING. Reads are not matched.",
+  "scan": {
+    "category": "database",
+    "rule_ids": ["scan.category.database", "scan.category.shell"]
+  },
+  "params": {},
+  "matchers": [
+    {
+      "matcher_id": "shell-destructive-sql",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [
+        { "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])(psql|mysql|mariadb|sqlite3|sqlcmd|mongosh|mongo|redis-cli|clickhouse-client|snowsql|cockroach\\s+sql|bq\\s+query|supabase\\s+db|prisma)\\b" },
+        { "pointer": "/command", "regex": "\\b(DROP\\s+(TABLE|DATABASE|SCHEMA|INDEX|VIEW|COLLECTION)|TRUNCATE|FLUSHALL|FLUSHDB|dropDatabase)\\b|\\.drop\\(|\\bDELETE\\s+FROM\\s+[A-Za-z0-9_.\"`\\\\]+\\s*(;|\"|'|$)|\\bmigrate\\s+reset\\b|\\bdb\\s+reset\\b|--force-reset\\b|--accept-data-loss\\b", "regex_flags": "i" }
+      ],
+      "action": "db.destroy"
+    },
+    {
+      "matcher_id": "shell-write-sql",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [
+        { "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])(psql|mysql|mariadb|sqlite3|sqlcmd|mongosh|mongo|redis-cli|clickhouse-client|snowsql|cockroach\\s+sql|bq\\s+query|supabase\\s+db|prisma)\\b" },
+        { "pointer": "/command", "regex": "\\b(INSERT\\s+INTO|UPDATE\\s+[A-Za-z0-9_.\"`]+\\s+SET|DELETE\\s+FROM|ALTER\\s+(TABLE|DATABASE|SCHEMA)|CREATE\\s+(TABLE|INDEX|DATABASE|SCHEMA)|GRANT|REVOKE|MERGE\\s+INTO|COPY\\s+[A-Za-z0-9_.\"`]+\\s+FROM|insertOne|insertMany|updateOne|updateMany|deleteOne|deleteMany|replaceOne|db\\s+push|migrate\\s+deploy|db\\s+execute)\\b|(^|[\\s\"'])(SET|DEL|HSET|LPUSH|RPUSH|EXPIRE)\\s", "regex_flags": "i" }
+      ],
+      "action": "db.write"
+    },
+    {
+      "matcher_id": "tool-destructive-sql",
+      "tool": { "regex": "^mcp__" },
+      "input": [{ "pointer": "/sql", "regex": "\\b(DROP\\s+(TABLE|DATABASE|SCHEMA|INDEX|VIEW)|TRUNCATE)\\b|\\bDELETE\\s+FROM\\s+[A-Za-z0-9_.\"`]+\\s*(;|$)", "regex_flags": "i" }],
+      "action": "db.destroy"
+    },
+    {
+      "matcher_id": "tool-destructive-query",
+      "tool": { "regex": "^mcp__" },
+      "input": [{ "pointer": "/query", "regex": "\\b(DROP\\s+(TABLE|DATABASE|SCHEMA|INDEX|VIEW)|TRUNCATE)\\b|\\bDELETE\\s+FROM\\s+[A-Za-z0-9_.\"`]+\\s*(;|$)", "regex_flags": "i" }],
+      "action": "db.destroy"
+    },
+    {
+      "matcher_id": "tool-write-sql",
+      "tool": { "regex": "^mcp__" },
+      "input": [{ "pointer": "/sql", "regex": "\\b(INSERT\\s+INTO|UPDATE\\s+[A-Za-z0-9_.\"`]+\\s+SET|DELETE\\s+FROM|ALTER\\s+(TABLE|DATABASE|SCHEMA)|CREATE\\s+(TABLE|INDEX|DATABASE|SCHEMA)|GRANT|REVOKE|MERGE\\s+INTO)\\b", "regex_flags": "i" }],
+      "action": "db.write"
+    },
+    {
+      "matcher_id": "tool-write-query",
+      "tool": { "regex": "^mcp__" },
+      "input": [{ "pointer": "/query", "regex": "\\b(INSERT\\s+INTO|UPDATE\\s+[A-Za-z0-9_.\"`]+\\s+SET|DELETE\\s+FROM|ALTER\\s+(TABLE|DATABASE|SCHEMA)|CREATE\\s+(TABLE|INDEX|DATABASE|SCHEMA)|GRANT|REVOKE|MERGE\\s+INTO)\\b", "regex_flags": "i" }],
+      "action": "db.write"
+    }
+  ],
+  "actions": {
+    "db.destroy": { "decisions": ["allow", "block"], "why": "Dropping or emptying tables outside DEV loses data that may only exist in backups; an agent never does it." },
+    "db.write": { "decisions": ["allow", "ask"], "why": "A write to a production database changes real records; a person reviews the statement first." }
+  },
+  "policy": {
+    "policy_id": "intentrax.database-writes",
+    "policy_version": "0.1.1",
+    "rules": [
+      {
+        "rule_id": "rule.allow-destroy-in-dev",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "db.destroy" }, { "field": "eeo.request.environment", "operator": "EQUALS", "value": "DEV" }],
+        "constraints": [],
+        "priority": 40
+      },
+      {
+        "rule_id": "rule.deny-destroy",
+        "effect": "DENY",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "db.destroy" }],
+        "constraints": [],
+        "priority": 30
+      },
+      {
+        "rule_id": "rule.allow-write-in-dev",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "db.write" }, { "field": "eeo.request.environment", "operator": "EQUALS", "value": "DEV" }],
+        "constraints": [],
+        "priority": 20
+      },
+      {
+        "rule_id": "rule.allow-write-in-staging",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "db.write" }, { "field": "eeo.request.environment", "operator": "EQUALS", "value": "STAGING" }],
+        "constraints": [],
+        "priority": 15
+      },
+      {
+        "rule_id": "rule.approve-write",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "db.write" }],
+        "constraints": [{ "constraint_id": "constraint.database-writes.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.database-writes.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "The owner of the database (an engineer with production data access)."
+  },
+  "limits": [
+    "The environment fact comes from the policy file, not from the connection string: set it to PROD wherever the agent can reach production data.",
+    "Statements are recognised in the command text or in an MCP tool's sql or query argument; a statement in a file the command runs (psql -f) is not read.",
+    "SQL written by an ORM inside application code is not seen; this pack covers what the agent sends directly."
+  ],
+  "examples": [
+    { "name": "psql drop table", "tool_name": "Bash", "tool_input": { "command": "psql \"$DATABASE_URL\" -c \"DROP TABLE users;\"" }, "environment": "PROD", "expect": "block" },
+    { "name": "delete without where", "tool_name": "Bash", "tool_input": { "command": "mysql -e \"DELETE FROM orders;\" shop" }, "expect": "block" },
+    { "name": "delete without where, backtick-quoted table in a shell string", "tool_name": "Bash", "tool_input": { "command": "mysql -e \"DELETE FROM \\`users\\`\" shop" }, "expect": "block" },
+    { "name": "MCP truncate", "tool_name": "mcp__postgres__execute_sql", "tool_input": { "sql": "TRUNCATE orders" }, "expect": "block" },
+    { "name": "prisma reset", "tool_name": "Bash", "tool_input": { "command": "npx prisma migrate reset --force" }, "expect": "block" },
+    { "name": "drop table in DEV", "tool_name": "Bash", "tool_input": { "command": "psql -c \"DROP TABLE scratch\"" }, "environment": "DEV", "expect": "allow" },
+    { "name": "psql update", "tool_name": "Bash", "tool_input": { "command": "psql -c \"UPDATE users SET plan='pro' WHERE id=7\"" }, "environment": "PROD", "expect": "ask" },
+    { "name": "MCP insert", "tool_name": "mcp__supabase__execute_sql", "tool_input": { "query": "insert into audit values (1, 'x')" }, "expect": "ask" },
+    { "name": "update in STAGING", "tool_name": "Bash", "tool_input": { "command": "psql -c \"UPDATE users SET plan='pro' WHERE id=7\"" }, "environment": "STAGING", "expect": "allow" },
+    { "name": "delete with where", "tool_name": "mcp__postgres__execute_sql", "tool_input": { "sql": "DELETE FROM sessions WHERE expires_at < NOW()" }, "expect": "ask" },
+    { "name": "psql select", "tool_name": "Bash", "tool_input": { "command": "psql -c \"SELECT count(*) FROM users\"" }, "expect": "none" },
+    { "name": "MCP select", "tool_name": "mcp__postgres__query", "tool_input": { "query": "select 1" }, "expect": "none" },
+    { "name": "SQL words without a client", "tool_name": "Bash", "tool_input": { "command": "grep -r \"DROP TABLE\" migrations/" }, "expect": "none" }
+  ]
+}

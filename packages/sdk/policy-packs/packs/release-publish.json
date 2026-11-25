@@ -1,0 +1,66 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.release-publish",
+  "pack_version": "0.1.0",
+  "title": "Releases, merges and production deploys",
+  "summary": "Asks before an agent publishes a package, pushes an image or tags, creates a release, merges a pull request or deploys to production.",
+  "scan": {
+    "category": "deploy",
+    "rule_ids": ["scan.category.deploy", "scan.category.shell"]
+  },
+  "params": {},
+  "matchers": [
+    {
+      "matcher_id": "shell-publish",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])(npm|pnpm|bun)\\s+publish\\b|(^|[^A-Za-z0-9_-])yarn\\s+(npm\\s+)?publish\\b|(^|[^A-Za-z0-9_-])(cargo\\s+publish|twine\\s+upload|gem\\s+push|poetry\\s+publish|dotnet\\s+nuget\\s+push|docker\\s+push|podman\\s+push|gh\\s+release\\s+create|gh\\s+pr\\s+merge|glab\\s+mr\\s+merge|fly(ctl)?\\s+deploy|firebase\\s+deploy|wrangler\\s+(deploy|publish)|eas\\s+submit|railway\\s+up|heroku\\s+releases:rollback)\\b|(^|[^A-Za-z0-9_-])(vercel|netlify\\s+deploy)\\b[^;&|]*\\s--prod\\b|(^|[^A-Za-z0-9_-])git\\s+push\\b[^;&|]*\\s--tags\\b" }],
+      "action": "release.publish"
+    },
+    {
+      "matcher_id": "tool-publish",
+      "tool": {
+        "token_groups": [["merge", "deploy", "publish", "release", "promote", "redeploy", "rollback"]],
+        "tokens_none": ["get", "list", "read", "search", "describe", "show", "view", "status", "check", "find", "fetch", "preview", "logs"]
+      },
+      "action": "release.publish"
+    }
+  ],
+  "actions": {
+    "release.publish": { "decisions": ["ask"], "why": "A release, merge or production deploy reaches users and is hard to take back; a person confirms it." }
+  },
+  "policy": {
+    "policy_id": "intentrax.release-publish",
+    "policy_version": "0.1.0",
+    "rules": [
+      {
+        "rule_id": "rule.approve-release",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "release.publish" }],
+        "constraints": [{ "constraint_id": "constraint.release-publish.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.release-publish.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "The release owner or a maintainer."
+  },
+  "limits": [
+    "Dry runs (npm publish --dry-run) are asked about too: the pack does not parse flags that make a command harmless.",
+    "A deploy started by a CI pipeline the agent triggers indirectly (pushing to a branch that deploys) is not seen here.",
+    "Tool names are matched by words: a tool called merge_csv_files is asked about as well."
+  ],
+  "examples": [
+    { "name": "npm publish", "tool_name": "Bash", "tool_input": { "command": "npm publish --access public" }, "expect": "ask" },
+    { "name": "merge a pull request with gh", "tool_name": "Bash", "tool_input": { "command": "gh pr merge 42 --squash" }, "expect": "ask" },
+    { "name": "vercel production deploy", "tool_name": "Bash", "tool_input": { "command": "vercel deploy --prod" }, "expect": "ask" },
+    { "name": "push tags", "tool_name": "Bash", "tool_input": { "command": "git push origin --tags" }, "expect": "ask" },
+    { "name": "MCP merge pull request", "tool_name": "mcp__github__merge_pull_request", "tool_input": { "owner": "acme", "repo": "app", "pull_number": 7 }, "expect": "ask" },
+    { "name": "build", "tool_name": "Bash", "tool_input": { "command": "npm run build" }, "expect": "none" },
+    { "name": "vercel preview", "tool_name": "Bash", "tool_input": { "command": "vercel dev" }, "expect": "none" },
+    { "name": "MCP list releases", "tool_name": "mcp__github__list_releases", "tool_input": { "owner": "acme", "repo": "app" }, "expect": "none" },
+    { "name": "MCP get deploy status", "tool_name": "mcp__vercel__get_deployment_status", "tool_input": { "id": "dpl_1" }, "expect": "none" }
+  ]
+}

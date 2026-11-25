@@ -1,0 +1,100 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.payment-transfers",
+  "pack_version": "0.1.0",
+  "title": "Payments, transfers and payouts",
+  "summary": "Asks before every payment, transfer, payout, charge or wire, and blocks those above deny_above_minor.",
+  "scan": {
+    "category": "financial",
+    "rule_ids": ["scan.category.financial", "scan.category.shell"]
+  },
+  "params": {
+    "deny_above_minor": {
+      "type": "INTEGER",
+      "default": 100000,
+      "min": 1,
+      "max": 1000000000000,
+      "description": "Payments above this amount, in minor units (100000 = 1000.00), are blocked."
+    }
+  },
+  "matchers": [
+    {
+      "matcher_id": "money-with-amount",
+      "tool": {
+        "token_groups": [["transfer", "transfers", "payout", "payouts", "pay", "payment", "payments", "charge", "charges", "wire", "withdraw", "withdrawal", "disburse", "disbursement", "remit", "remittance", "capture"]],
+        "tokens_none": ["get", "list", "read", "search", "retrieve", "fetch", "describe", "show", "view", "find", "status", "refund", "refunds", "estimate", "quote", "preview"]
+      },
+      "action": "payments.move_money",
+      "facts": {
+        "amount_minor": { "pointers": ["/amount", "/amount_minor", "/amount_cents"], "type": "INTEGER", "required": true },
+        "resource": { "pointers": ["/destination", "/recipient", "/account", "/to"], "type": "STRING" }
+      }
+    },
+    {
+      "matcher_id": "money-amount-unknown",
+      "tool": {
+        "token_groups": [["transfer", "transfers", "payout", "payouts", "pay", "payment", "payments", "charge", "charges", "wire", "withdraw", "withdrawal", "disburse", "disbursement", "remit", "remittance", "capture"]],
+        "tokens_none": ["get", "list", "read", "search", "retrieve", "fetch", "describe", "show", "view", "find", "status", "refund", "refunds", "estimate", "quote", "preview"]
+      },
+      "action": "payments.move_money_amount_unknown"
+    },
+    {
+      "matcher_id": "shell-money",
+      "tool": { "equals": ["Bash", "PowerShell"] },
+      "input": [{ "pointer": "/command", "regex": "(^|[^A-Za-z0-9_-])stripe\\s+(transfers|payouts|charges|payment_intents)\\s+(create|confirm|capture)\\b|api\\.stripe\\.com/v1/(transfers|payouts|charges|payment_intents)" }],
+      "action": "payments.move_money_amount_unknown"
+    }
+  ],
+  "actions": {
+    "payments.move_money": { "decisions": ["ask", "block"], "why": "Moving money is hard to reverse; a person approves each payment, and the largest are done by a person." },
+    "payments.move_money_amount_unknown": { "decisions": ["ask"], "why": "The amount could not be read from the call, so a person checks it." }
+  },
+  "policy": {
+    "policy_id": "intentrax.payment-transfers",
+    "policy_version": "0.1.0",
+    "rules": [
+      {
+        "rule_id": "rule.approve-payment-amount-unknown",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "payments.move_money_amount_unknown" }],
+        "constraints": [{ "constraint_id": "constraint.payment-transfers.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 30
+      },
+      {
+        "rule_id": "rule.deny-payment-above-limit",
+        "effect": "DENY",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "payments.move_money" }, { "field": "eeo.request.amount_minor", "operator": "GREATER_THAN", "value": { "param": "deny_above_minor" } }],
+        "constraints": [],
+        "priority": 20
+      },
+      {
+        "rule_id": "rule.approve-payment",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "payments.move_money" }],
+        "constraints": [{ "constraint_id": "constraint.payment-transfers.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.payment-transfers.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "Someone in finance who may approve payments."
+  },
+  "limits": [
+    "Amounts are compared in minor units with no currency conversion.",
+    "Payment tools are found by words in the tool name (transfer, payout, payment, charge, wire and similar). Refunds are left to intentrax.refunds-threshold.",
+    "Tools whose names mention payments without moving money (update_payment_method) are asked about too."
+  ],
+  "examples": [
+    { "name": "transfer", "tool_name": "mcp__stripe__create_transfer", "tool_input": { "amount": 2500, "currency": "usd", "destination": "acct_1" }, "expect": "ask" },
+    { "name": "large payout", "tool_name": "mcp__stripe__create_payout", "tool_input": { "amount": 500000 }, "expect": "block" },
+    { "name": "wire with no amount field", "tool_name": "mcp__bank__send_wire", "tool_input": { "beneficiary": "ACME Ltd" }, "expect": "ask" },
+    { "name": "custom limit", "tool_name": "payInvoice", "tool_input": { "amount": 150 }, "params": { "deny_above_minor": 100 }, "expect": "block" },
+    { "name": "stripe api with curl", "tool_name": "Bash", "tool_input": { "command": "curl https://api.stripe.com/v1/payouts -d amount=1000" }, "expect": "ask" },
+    { "name": "list payouts", "tool_name": "mcp__stripe__list_payouts", "tool_input": {}, "expect": "none" },
+    { "name": "refund goes to the refunds pack", "tool_name": "mcp__stripe__create_refund", "tool_input": { "amount": 100 }, "expect": "none" },
+    { "name": "unrelated tool", "tool_name": "mcp__github__create_issue", "tool_input": { "title": "bug" }, "expect": "none" }
+  ]
+}

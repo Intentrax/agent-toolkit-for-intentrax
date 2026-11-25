@@ -1,0 +1,86 @@
+{
+  "schema_version": "intentrax.policy_pack/0.1",
+  "pack_id": "intentrax.destructive-tools",
+  "pack_version": "0.1.0",
+  "title": "Destructive agent tools",
+  "summary": "Blocks tools that delete whole volumes, backups, databases, projects, accounts, buckets or clusters outside DEV, where it asks; asks before any other delete, drop or purge tool.",
+  "scan": {
+    "category": "destructive",
+    "rule_ids": ["scan.category.destructive"]
+  },
+  "params": {},
+  "matchers": [
+    {
+      "matcher_id": "destroy-critical",
+      "tool": {
+        "token_groups": [
+          ["delete", "destroy", "drop", "purge", "wipe", "truncate", "erase", "terminate", "deprovision", "teardown", "nuke", "remove"],
+          ["volume", "volumes", "backup", "backups", "database", "databases", "db", "project", "projects", "account", "accounts", "bucket", "buckets", "cluster", "clusters", "environment", "environments", "namespace", "repo", "repository", "repositories", "table", "tables", "instance", "instances", "snapshot", "snapshots", "organization", "org", "workspace", "all"]
+        ],
+        "tokens_none": ["list", "get", "read", "search", "describe", "show", "view", "preview", "check", "estimate"]
+      },
+      "action": "tool.destroy_critical"
+    },
+    {
+      "matcher_id": "destroy-other",
+      "tool": {
+        "token_groups": [["delete", "destroy", "drop", "purge", "wipe", "truncate", "erase", "terminate", "deprovision", "teardown", "nuke", "remove"]],
+        "tokens_none": ["list", "get", "read", "search", "describe", "show", "view", "preview", "check", "estimate"]
+      },
+      "action": "tool.destroy"
+    }
+  ],
+  "actions": {
+    "tool.destroy_critical": { "decisions": ["ask", "block"], "why": "Deleting a volume, backup, database or project usually takes its data with it, often with no undo; outside DEV a person does it." },
+    "tool.destroy": { "decisions": ["ask"], "why": "A delete cannot always be undone; a person checks what is being deleted." }
+  },
+  "policy": {
+    "policy_id": "intentrax.destructive-tools",
+    "policy_version": "0.1.0",
+    "rules": [
+      {
+        "rule_id": "rule.approve-critical-delete-in-dev",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "tool.destroy_critical" }, { "field": "eeo.request.environment", "operator": "EQUALS", "value": "DEV" }],
+        "constraints": [{ "constraint_id": "constraint.destructive-tools.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 30
+      },
+      {
+        "rule_id": "rule.deny-critical-delete",
+        "effect": "DENY",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "tool.destroy_critical" }],
+        "constraints": [],
+        "priority": 20
+      },
+      {
+        "rule_id": "rule.approve-delete",
+        "effect": "ALLOW",
+        "conditions": [{ "field": "eeo.request.tool", "operator": "EQUALS", "value": "tool.destroy" }],
+        "constraints": [{ "constraint_id": "constraint.destructive-tools.approval", "type": "REQUIRE_APPROVAL", "value": true }],
+        "priority": 10
+      }
+    ],
+    "default_effect": "DENY"
+  },
+  "approval": {
+    "constraint_id": "constraint.destructive-tools.approval",
+    "type": "REQUIRE_APPROVAL",
+    "approver_hint": "The owner of the data being deleted."
+  },
+  "limits": [
+    "Tools are found by words in their names: a tool named sync or cleanup that deletes is not matched, and delete_draft is asked about.",
+    "The environment fact comes from the policy file, not from the tool's target.",
+    "Shell deletes are covered by intentrax.shell-destructive; this pack reads tool names only."
+  ],
+  "examples": [
+    { "name": "delete a volume", "tool_name": "mcp__railway__volume_delete", "tool_input": { "volumeId": "vol_1" }, "expect": "block" },
+    { "name": "delete a project", "tool_name": "mcp__supabase__delete_project", "tool_input": { "id": "p1" }, "environment": "PROD", "expect": "block" },
+    { "name": "purge backups", "tool_name": "purgeBackups", "tool_input": {}, "expect": "block" },
+    { "name": "delete a volume in DEV", "tool_name": "mcp__railway__volume_delete", "tool_input": { "volumeId": "vol_1" }, "environment": "DEV", "expect": "ask" },
+    { "name": "delete a comment", "tool_name": "mcp__linear__delete_comment", "tool_input": { "id": "c1" }, "expect": "ask" },
+    { "name": "remove a label", "tool_name": "mcp__github__remove_label", "tool_input": { "name": "bug" }, "expect": "ask" },
+    { "name": "list deleted items", "tool_name": "mcp__drive__list_deleted_items", "tool_input": {}, "expect": "none" },
+    { "name": "read a page", "tool_name": "mcp__notion__get_page", "tool_input": { "id": "p1" }, "expect": "none" },
+    { "name": "shell is another pack", "tool_name": "Bash", "tool_input": { "command": "rm -rf build" }, "expect": "none" }
+  ]
+}
