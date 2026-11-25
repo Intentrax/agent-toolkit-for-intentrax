@@ -6,7 +6,7 @@
 
 A policy pack turns one kind of risky agent action into a decision: **allow**
 (no objection), **ask** (a person approves first) or **block** (refused).
-`intentrax guard` (a later SDK release) never auto-approves. A pack's allow means only that the pack
+`intentrax guard` (SDK 1.11.0) never auto-approves. A pack's allow means only that the pack
 has no objection, and the agent's own permission rules (for example Claude
 Code's) still decide.
 Each pack maps to one `intentrax scan` category, so the path is:
@@ -14,8 +14,8 @@ Each pack maps to one `intentrax scan` category, so the path is:
 1. `intentrax scan` lists what your agent can reach.
 2. `intentrax policy init --from-scan` writes a draft policy file that selects
    the matching packs, with a comment on every choice.
-3. `intentrax guard` (a local Claude Code hook; not in this SDK release yet, it
-   ships in a later one) loads that file
+3. `intentrax guard claude-code` (a local Claude Code hook, SDK 1.11.0) loads
+   that file
    and applies the decision before each tool call.
 
 Everything here is local and static. Nothing is run or sent, and no account is
@@ -175,8 +175,8 @@ const { decision, reason, results } = evaluateToolCall(policy, {
 ```
 
 If `.intentrax/policy.jsonc` exists but does not load (a changed pack, a bad
-param, a missing pack file), `intentrax guard` (a later SDK release) does not
-quietly drop the packs.
+param, a missing pack file), `intentrax guard` does not quietly drop
+the packs.
 It keeps its built-in blocks and asks before every other shell, write or MCP
 call until the file is fixed; reads are unaffected. It also blocks the agent
 from writing the policy file, the MCP pins and any custom pack file the policy

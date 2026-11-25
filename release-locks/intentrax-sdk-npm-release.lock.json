@@ -1,10 +1,10 @@
 {
   "$schema": "intentrax://schemas/verification/typescript-sdk/npm-release-lock",
   "release_id": "typescript-sdk-npm-release-001",
-  "release_version": "@intentrax/sdk/1.10.0",
+  "release_version": "@intentrax/sdk/1.11.0",
   "sdk_contract_version": "intentrax-public-sdk-contract/1.0",
   "package_name": "@intentrax/sdk",
-  "package_version": "1.10.0",
+  "package_version": "1.11.0",
   "canonicalization_version": "json-stable-indent/1.0",
   "hash_algorithm": "SHA-256",
   "generator_version": "intentrax-typescript-sdk-release-gen/1.0",
@@ -27,15 +27,15 @@
     "dry_run_only_reason": "source tree stores deterministic npm release evidence only; registry publish and signing must run as controlled release operations outside pull request CI"
   },
   "npm_pack": {
-    "id": "@intentrax/sdk@1.10.0",
+    "id": "@intentrax/sdk@1.11.0",
     "name": "@intentrax/sdk",
-    "version": "1.10.0",
-    "size": 373189,
-    "unpackedSize": 1499344,
-    "shasum": "622e2e9ab3356ffbbc0640012052bfa2c8d7a41e",
-    "integrity": "sha512-79L+fNp8MXn0akavcFG+7POGO6ICRxh0kxLgsPjSARFFhNwu/O90kNiu3JK8Wc1BRPHUpkZkSIfxQqn6GM5EJQ==",
-    "tarball_sha256": "7cd4941bae0cb7ed6c960a0dffbad63e1486110381407cbf7875a4df31b035fd",
-    "filename": "intentrax-sdk-1.10.0.tgz",
+    "version": "1.11.0",
+    "size": 428679,
+    "unpackedSize": 1680220,
+    "shasum": "455ef97a8f23f650da31051aa69e22923365e1c5",
+    "integrity": "sha512-wU0R9FSbjmgwHOqqSA+NI0nzNIg3D5URK6KXa1TG+Y28uPR+wC5dJn7B09gjOiItc8mpxgp3rQwSNIHAl5Bruw==",
+    "tarball_sha256": "31e44405a557ac60f81a90081e20dec9234676c082b621ddce687c8fad032d38",
+    "filename": "intentrax-sdk-1.11.0.tgz",
     "files": [
       {
         "path": "LICENSE",
@@ -44,7 +44,7 @@
       },
       {
         "path": "README.md",
-        "size": 23894,
+        "size": 25169,
         "mode": 420
       },
       {
@@ -64,7 +64,7 @@
       },
       {
         "path": "cli/intentrax.mjs",
-        "size": 185709,
+        "size": 193316,
         "mode": 420
       },
       {
@@ -155,6 +155,51 @@
       {
         "path": "examples/sandbox/unpinned-signer.json",
         "size": 29779,
+        "mode": 420
+      },
+      {
+        "path": "guard/README.md",
+        "size": 13024,
+        "mode": 420
+      },
+      {
+        "path": "guard/classify.mjs",
+        "size": 17239,
+        "mode": 420
+      },
+      {
+        "path": "guard/cli.mjs",
+        "size": 17197,
+        "mode": 420
+      },
+      {
+        "path": "guard/hook.mjs",
+        "size": 6895,
+        "mode": 420
+      },
+      {
+        "path": "guard/install.mjs",
+        "size": 20738,
+        "mode": 420
+      },
+      {
+        "path": "guard/policy.mjs",
+        "size": 10755,
+        "mode": 420
+      },
+      {
+        "path": "guard/records.mjs",
+        "size": 16715,
+        "mode": 420
+      },
+      {
+        "path": "guard/shell.mjs",
+        "size": 44888,
+        "mode": 420
+      },
+      {
+        "path": "guard/summary.mjs",
+        "size": 3354,
         "mode": 420
       },
       {
@@ -273,13 +318,28 @@
         "mode": 420
       },
       {
+        "path": "outputbinding/README.md",
+        "size": 2844,
+        "mode": 420
+      },
+      {
+        "path": "outputbinding/index.d.ts",
+        "size": 3817,
+        "mode": 420
+      },
+      {
+        "path": "outputbinding/index.mjs",
+        "size": 14339,
+        "mode": 420
+      },
+      {
         "path": "package.json",
-        "size": 2247,
+        "size": 2497,
         "mode": 420
       },
       {
         "path": "policy-packs/README.md",
-        "size": 12738,
+        "size": 12677,
         "mode": 420
       },
       {
@@ -648,7 +708,7 @@
         "mode": 420
       }
     ],
-    "entryCount": 122,
+    "entryCount": 134,
     "bundled": []
   },
   "artifacts": [
@@ -673,7 +733,7 @@
     {
       "path": "sdk/adoption/pb-a5-003-006-beta-acceptance.v1.json",
       "role": "adoption_acceptance_lock",
-      "sha256": "f2be1f75dafaa7b69c428639ca913d4e65ba5a363480cf054aac408b30a882d4",
+      "sha256": "60b71724c450516773916e968b667925af9bab1fef79b8d49e3349c9bfe50d78",
       "bytes": 14791
     },
     {
@@ -727,20 +787,20 @@
     {
       "path": "sdk/typescript/README.md",
       "role": "npm_package_documentation",
-      "sha256": "cb85f0340f2cfa23ce238fd6b8e494cddf2620ee23a61794aa92adcc803afeb5",
-      "bytes": 23894
+      "sha256": "b7678ac4d7cd2b86a0543ed9bb6743ced08c95755e79305769ac3d08b5259be6",
+      "bytes": 25169
     },
     {
       "path": "sdk/typescript/cli/intentrax.mjs",
       "role": "npm_package_cli",
-      "sha256": "1ef9a13fb3576a867ae5ee545e609bcd430d3f3e1ef22e0e7d95734b42909512",
-      "bytes": 185709
+      "sha256": "6b0cf9d4f0fd0c771e53007eb2f8eeeb68bb66d0c8804bcccb3f93113ac6461c",
+      "bytes": 193316
     },
     {
       "path": "sdk/typescript/conformance.test.mjs",
       "role": "npm_package_conformance_tests",
-      "sha256": "caafdf03060fc59b76189001e175a61c69917f0ee23b69ed60da3f469fecddbf",
-      "bytes": 126481
+      "sha256": "a2397b488933cd112b8d565686b417af7b5863d345c1f94892255bd593fdc11b",
+      "bytes": 129404
     },
     {
       "path": "sdk/typescript/examples/adapters/claude-code.md",
@@ -835,14 +895,14 @@
     {
       "path": "sdk/typescript/package-lock.json",
       "role": "npm_install_lock",
-      "sha256": "47d9388b92c0476cde7a1982ef24ac4b07d34445dc0625767c67a8fa8ecdb0b1",
+      "sha256": "72e9417b9e826eb715f259791668f8c9f397034af5d300dfd2adf106b649e9fe",
       "bytes": 340
     },
     {
       "path": "sdk/typescript/package.json",
       "role": "npm_package_manifest",
-      "sha256": "5cbbcd0c72c49db7af4e4b0c5caa862c421ef245a59171903d67591b07e06e10",
-      "bytes": 2247
+      "sha256": "3c71f8c558ef7702a2c9d4b9fd822dcf6272041b5207276c33767220d30d4f3a",
+      "bytes": 2497
     },
     {
       "path": "verification/external_verifiers/pb_a5_003_006_beta_acceptance.py",
@@ -851,5 +911,5 @@
       "bytes": 10208
     }
   ],
-  "release_hash": "dbfb7b161d540727ebbb882ee7545c7c13a2dfb87bab7883a2ba42b0801bcb67"
+  "release_hash": "67833321e2c5f76e2613807d4e71276bcd6ca467ec2c98d3b71dc89bbd2367b3"
 }

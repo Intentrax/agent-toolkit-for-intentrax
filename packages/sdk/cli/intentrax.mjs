@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildAgentGatewayAdmissionEnvelope, buildLegacyVerificationAssessment, compilePolicyDocument, deriveAssuranceVerdict, evaluateCompiledPolicy, policyReevaluationMismatches } from "../index.js";
 
-const VERSION = "1.10.0";
+const VERSION = "1.11.0";
 const ADMISSION_SCHEMA_VERSION = "intentrax.runtime.agent_admission_request/1.0";
 const INIT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_init/1.0";
 const ACTION_RECEIPT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_action_receipt/1.0";
@@ -41,6 +41,8 @@ const BUILT_IN_KEY_SET_URLS = Object.freeze([
 const BUILT_IN_POLICY_REGISTRY_URL = new URL("../trust/policies/", import.meta.url);
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 const SIGNER_TRUST_EXIT_CODE = 3;
+// verify-proof --answer-file: the answer is not the answer the proof binds.
+const ANSWER_MISMATCH_EXIT_CODE = 1;
 const LOCAL_PDF_RECEIPT_VERIFICATION_SCHEMA_VERSION = "intentrax.sdk.local_pdf_receipt_verification_report/1.0";
 const LOCAL_PDF_RECEIPT_VERIFIER_VERSION = "intentrax-typescript-cli-local-pdf-receipt-verifier/1.0";
 const ENDPOINT = "/v1/agent/admissions";
@@ -273,6 +275,13 @@ async function main(argv) {
     const { scanMain } = await import("../scan/cli.mjs");
     return scanMain([subject, ...rest].filter((value) => value !== undefined));
   }
+  if (command === "guard") {
+    // Local Claude Code gate: a PreToolUse hook that blocks or asks before
+    // risky tool calls, with a local hash-chained record. No account, no
+    // network; not trust-bearing. See guard/README.md.
+    const { guardMain } = await import("../guard/cli.mjs");
+    return guardMain([subject, ...rest].filter((value) => value !== undefined));
+  }
   if (command === "policy") {
     // Open policy packs: list, show, hash, validate, init --from-scan, check.
     // Local and static; nothing is run or sent. See policy-packs/README.md.
@@ -322,10 +331,21 @@ async function main(argv) {
         fail(`this copy of the CLI cannot verify signed pre-approval records (preapproval/ or envelope/ is missing): ${stableErrorMessage(error)}`);
       }
     }
+    // Rendered-output binding (spec 10): outputbinding/ loads only when the
+    // proof seals one or --answer-file is given, for the same reason.
+    if (options.answerFile !== "" || proofSealsOutputBinding(subject)) {
+      try {
+        options.outputBindingModule = await import("../outputbinding/index.mjs");
+      } catch (error) {
+        fail(`this copy of the CLI cannot check rendered-output bindings (outputbinding/ is missing): ${stableErrorMessage(error)}`);
+      }
+    }
     const output = verifyProofExportCommand(subject, options);
+    const signerOK = output.signer_trust === "TRUSTED" || output.signer_trust === "SANDBOX_NON_TRUST_BEARING";
     const exitCode = output.status === "PASS" || output.status === "SANDBOX_NON_TRUST_BEARING"
       ? 0
-      : output.status === "APPROVAL_EVIDENCE_INVALID" ? 2 : SIGNER_TRUST_EXIT_CODE;
+      : output.status === "APPROVAL_EVIDENCE_INVALID" ? 2
+        : output.status === "ANSWER_MISMATCH" && signerOK ? ANSWER_MISMATCH_EXIT_CODE : SIGNER_TRUST_EXIT_CODE;
     if (options.json) {
       console.log(JSON.stringify(output, null, 2));
     } else if (output.status === "PASS") {
@@ -335,8 +355,17 @@ async function main(argv) {
     }
     if (!options.json) {
       console.log(assessmentTable(output.verification_assessment));
+      if (output.output_binding) {
+        console.log(`output binding: ${output.output_binding.binding_source} content_hash=${output.output_binding.content_hash}`);
+        console.log(`  ${output.output_binding_statement}`);
+      }
+      if (output.answer_check) console.log(`answer check: ${output.answer_check.status}`);
+      if (output.quote_check) console.log(`quote check: ${output.quote_check.status}`);
     }
     if (exitCode !== 0) {
+      if (output.status === "ANSWER_MISMATCH") {
+        console.error(`intentrax: answer_check=${output.answer_check.status}: the answer text is not the answer this proof binds (a match is a match against the sealed hash, never a verdict on whether the answer is correct).`);
+      }
       if (output.status === "APPROVAL_EVIDENCE_INVALID") {
         console.error(`intentrax: the proof binds approval evidence that does not check out (${output.approval_evidence.filter((check) => check.status === "INVALID").map((check) => check.code).join(",")}); the sealed approval or rejection must not be relied on.`);
       }
@@ -1152,6 +1181,8 @@ function parseVerifyProofOptions(args) {
     tenantKeys: [],
     approverSets: [],
     pinDirectoryHeads: [],
+    answerFile: "",
+    quoteFile: "",
   };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -1159,6 +1190,10 @@ function parseVerifyProofOptions(args) {
       options.json = true;
     } else if (arg === "--report-out") {
       options.reportOut = requireValue(args, ++index, arg);
+    } else if (arg === "--answer-file") {
+      options.answerFile = requireValue(args, ++index, arg);
+    } else if (arg === "--quote-file") {
+      options.quoteFile = requireValue(args, ++index, arg);
     } else if (arg === "--tenant-keys") {
       options.tenantKeys.push(requireValue(args, ++index, arg));
     } else if (arg === "--approver-set") {
@@ -1183,6 +1218,9 @@ function parseVerifyProofOptions(args) {
   }
   if (options.tlogBundle !== "" && options.tlogTrust === "") {
     fail("--tlog-bundle needs --tlog-trust: a bundle is only checked against a pinned transparency-log trust document");
+  }
+  if (options.quoteFile !== "" && options.answerFile === "") {
+    fail("--quote-file needs --answer-file: a hash of the whole answer cannot confirm part of it");
   }
   return options;
 }
@@ -1218,6 +1256,46 @@ const PREAPPROVAL_MARKERS = Object.freeze([
   "\"disclosures\"",
   "intentrax.trust.published_key_set/1.2",
 ]);
+
+// Whether the proof's signed AEP seals aep.output_binding. Decided from the
+// parsed export and AEP, so a JSON escape such as "\u006futput_binding" cannot
+// hide the binding; the raw-text check is a fallback for an export that does
+// not parse here (the command reports it). A missing file is reported by the
+// command itself.
+function proofSealsOutputBinding(path) {
+  if (!path) return false;
+  let text;
+  try {
+    text = readFileSync(resolve(path), "utf8");
+  } catch {
+    return false;
+  }
+  try {
+    const proofExport = JSON.parse(text);
+    const canonical = isRecord(proofExport) && isRecord(proofExport.proof_record) ? proofExport.proof_record.canonical_aep_json : undefined;
+    if (typeof canonical === "string") {
+      const aep = JSON.parse(canonical);
+      if (isRecord(aep) && Object.hasOwn(aep, "output_binding")) return true;
+    }
+  } catch {
+    // not parseable here: fall back to the text
+  }
+  return text.includes("output_binding");
+}
+
+function readUTF8TextFile(path, label) {
+  let bytes;
+  try {
+    bytes = readFileSync(resolve(path));
+  } catch (error) {
+    fail(`cannot read the ${label} file: ${error.code ?? error.message}`);
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    fail(`the ${label} file is not valid UTF-8`);
+  }
+}
 
 function needsPreapprovalModules(proofExportPath, options) {
   if (options.tenantKeys.length > 0 || options.approverSets.length > 0 || options.pinDirectoryHeads.length > 0) return true;
@@ -1281,7 +1359,14 @@ function verifyProofExportCommand(proofExportPath, options) {
   const keySets = loadPublishedKeySets(options.trustedKeys, pa);
   const policyDocuments = options.policyDocuments.map((path) => readFileSync(resolve(path), "utf8"));
   const transparency = loadTransparencyInputs(options);
-  const report = buildLocalProofVerificationReport(proofExport, resolvedProofExportPath, resolve(options.reportOut), keySets, policyDocuments, transparency, preapproval);
+  const outputBindingInputs = options.outputBindingModule === undefined
+    ? null
+    : {
+      module: options.outputBindingModule,
+      answer: options.answerFile === "" ? null : readUTF8TextFile(options.answerFile, "answer"),
+      quote: options.quoteFile === "" ? null : readUTF8TextFile(options.quoteFile, "quote"),
+    };
+  const report = buildLocalProofVerificationReport(proofExport, resolvedProofExportPath, resolve(options.reportOut), keySets, policyDocuments, transparency, preapproval, outputBindingInputs);
   const reportData = JSON.stringify(report, null, 2) + "\n";
   mkdirSync(dirname(resolve(options.reportOut)), { recursive: true });
   writeFileSync(resolve(options.reportOut), reportData, { mode: 0o600 });
@@ -1399,7 +1484,7 @@ function transparencyFailureMessage(report) {
   return `intentrax: the transparency-log inclusion bundle did not verify against the pinned trust document (${codes}); this proof is NOT shown to be in the log and the bundle must not be relied on.`;
 }
 
-function buildLocalProofVerificationReport(proofExport, proofExportPath, reportPath, keySets, policyDocuments = [], transparency = null, preapproval = null) {
+function buildLocalProofVerificationReport(proofExport, proofExportPath, reportPath, keySets, policyDocuments = [], transparency = null, preapproval = null, outputBindingInputs = null) {
   const invalid = validateProofLookupExport(proofExport);
   if (invalid.length > 0) {
     fail(`proof export verification failed closed: ${invalid.join(",")}`);
@@ -1410,6 +1495,21 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
   if (signatures.invalid.length > 0) {
     fail(`proof export verification failed closed: ${signatures.invalid.join(",")}`);
   }
+  // A rendered-output binding sealed in the signed AEP (aep.output_binding,
+  // spec 10) must be well formed, or verification fails closed; --answer-file
+  // checks an answer against it (MATCH is a match against the sealed hash,
+  // never a verdict on whether the answer is correct).
+  const ob = outputBindingInputs === null ? null : outputBindingInputs.module;
+  const outputBinding = ob === null ? { binding: null, invalid: [] } : ob.sealedOutputBinding(record.canonical_aep_json);
+  if (outputBinding.invalid.length > 0) {
+    fail(`proof export verification failed closed: ${outputBinding.invalid.join(",")}`);
+  }
+  if (ob !== null && outputBindingInputs.answer !== null && outputBinding.binding === null) {
+    fail("proof binds no answer: its signed AEP carries no output_binding to check --answer-file against");
+  }
+  const answerChecks = ob === null || outputBindingInputs.answer === null
+    ? null
+    : ob.checkAnswerAndQuote(outputBinding.binding, outputBindingInputs.answer, outputBindingInputs.quote);
   // The signed AEP bytes are verified above; a policy binding sealed in them
   // (aep.policy_binding, AEP 1.1 policy-binding profile) must be well formed
   // and is reported as sealed. Absence is never a failure.
@@ -1487,7 +1587,12 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
     // min_trusted_signers distinct trusted keys signed. Valid signatures from
     // keys you have not chosen to trust prove nothing about who signed, so they
     // never yield PASS.
-    status: approvalEvidenceInvalid ? "APPROVAL_EVIDENCE_INVALID" : tlog !== null && tlog.status === "FAILED" ? "TRANSPARENCY_FAILED" : signerStatus,
+    // An answer that is not the bound answer (--answer-file) is
+    // ANSWER_MISMATCH: exit 1, or 3 when the signers are not trusted either.
+    status: approvalEvidenceInvalid ? "APPROVAL_EVIDENCE_INVALID"
+      : tlog !== null && tlog.status === "FAILED" ? "TRANSPARENCY_FAILED"
+        : answerChecks !== null && answerChecks.answer_check.status !== "MATCH" ? "ANSWER_MISMATCH"
+          : signerStatus,
     signer_trust: trust.signer_trust,
     trust_bearing: trust.signer_trust === "TRUSTED",
     signature_verification: {
@@ -1531,6 +1636,14 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
     ...(admissionBinding === null ? {} : { admission_binding: admissionBinding, admission_binding_statement: pa.admissionBindingStatement(admissionBinding) }),
     ...(approvalEvidence.length === 0 ? {} : { approval_evidence: approvalEvidence }),
     ...(preapproval === null || !preapproval.exportHadExtras ? {} : { disclosures: opened.report }),
+    // Rendered-output binding (spec 10; same members as the Go verifier):
+    // the binding as sealed and who computed its hash, in words. A
+    // PRODUCER_DECLARED_AT_ISSUANCE binding never reads as computed by
+    // Intentrax. answer_check / quote_check only with --answer-file /
+    // --quote-file.
+    ...(outputBinding.binding === null ? {} : { output_binding: outputBinding.binding, output_binding_statement: ob.outputBindingStatement(outputBinding.binding) }),
+    ...(answerChecks === null ? {} : { answer_check: answerChecks.answer_check }),
+    ...(answerChecks === null || answerChecks.quote_check === null ? {} : { quote_check: answerChecks.quote_check }),
     hash_algorithm: "SHA-256",
     boundary_assertions: {
       offline_verifier_used: true,
@@ -3454,7 +3567,7 @@ function printHelp() {
 Usage:
   intentrax init <adapter> [--dry-run] [--force] [--json] [--output-dir <dir>] [--base-url <url>] [--tenant-id <tenant>]
   intentrax check-init --output-dir <dir> [--json]
-  intentrax verify-proof <proof-export.json> [--trusted-keys <key-set.json>] [--policy-document <policy.json>] [--tlog-trust <transparency-log.json> [--tlog-bundle <proof.tlog.json>]] [--tenant-keys <directory.json>] [--approver-set <approver-set.json>] [--pin-directory-head <hex>] [--json] [--report-out <file>]
+  intentrax verify-proof <proof-export.json> [--answer-file <answer.txt> [--quote-file <quote.txt>]] [--trusted-keys <key-set.json>] [--policy-document <policy.json>] [--tlog-trust <transparency-log.json> [--tlog-bundle <proof.tlog.json>]] [--tenant-keys <directory.json>] [--approver-set <approver-set.json>] [--pin-directory-head <hex>] [--json] [--report-out <file>]
   intentrax verify-pdf-receipt <receipt.pdf> --pdf-hash <X-Intentrax-PDF-Hash> [--json] [--report-out <file>]
   intentrax sandbox [--scenario confirmed|contradicted] [--check <read-only-check.mjs>] [--dir <dir>] [--json]
   intentrax sandbox verify <bundle.json> [--keys <local-key-set.json>] [--issuer-keys <pinned-external-issuers.json>] [--require-external-issuer <issuer>]... [--json]
@@ -3463,6 +3576,10 @@ Usage:
   intentrax mcp pin --server <cmd|url> [--name <name>] [--accept <tool,...> | --replace] [--json]
   intentrax mcp check [--pins <file>] [--name <name>] [--json]
   intentrax mcp proxy [--pins <file>] [--name <name>] [--on-drift block|warn]
+  intentrax guard claude-code [--dir <dir>] [--local] [--mcp] [--dry-run] [--json]
+  intentrax guard status|verify [--dir <dir>] [--json]
+  intentrax guard explain --command '<shell command>' | --tool <name> [--input <json>]
+  intentrax guard uninstall [--dir <dir>] [--local] [--purge] [--dry-run]
   intentrax policy list|show <pack>|hash <pack>|validate [file]|check --tool <name> [--input <json>] [--json]
   intentrax policy init --from-scan [dir] [--out <file>] [--environment PROD|STAGING|DEV] [--force]
   intentrax approve keygen --tenant-id <id> --principal-id <id> --key-id <id> --out <key.json> --registration-out <reg.json>
@@ -3562,6 +3679,15 @@ Proof export verification:
   Add more sets, for example revocations, with --trusted-keys <file>
   (repeatable).
 
+  Rendered-output binding: when the signed AEP seals an output_binding, the
+  report shows it and says who computed the answer hash
+  (output_binding_statement: ENGINE_COMPUTED or PRODUCER_DECLARED_AT_ISSUANCE).
+  --answer-file checks an answer text against it (answer_check MATCH or
+  MISMATCH; a mismatch is status ANSWER_MISMATCH, exit 1, or 3 when the
+  signers are not trusted either) and --quote-file whether a quote is part of
+  that answer. A match is a match against the sealed hash, never a verdict on
+  whether the answer is correct. A proof with no binding refuses --answer-file.
+
 Read-back (intentrax readback --help):
   Reads the system of record with your read-only check before anyone reports
   success. 0 CONFIRMED, 12 CONTRADICTED (CAUGHT), 10 PENDING, 11 UNKNOWN,
@@ -3578,6 +3704,16 @@ MCP tool pinning (intentrax mcp --help):
   compares them (0 MATCH, 10 CHANGED, 2 UNCHECKED, 1 usage); proxy blocks
   changed and new tools in a stdio proxy. Covers tool definitions only. It
   does not show that the server's code or behaviour is unchanged.
+
+Guard (intentrax guard --help):
+  claude-code installs a Claude Code PreToolUse hook that blocks (force push,
+  rm -rf of a root or home, DROP/TRUNCATE, terraform destroy...) or asks
+  (pushes, deploys, recursive deletes, SQL writes, consequential MCP tools)
+  before a tool call; allow means no objection, and Claude Code's own
+  permission rules still apply. It also applies the policy packs in
+  .intentrax/policy.jsonc. Every decision goes into a local hash-chained
+  record that verify checks offline. No account, no network; the record is
+  local, not trust-bearing. 0 ok, 2 broken chain or failed install, 1 usage.
 
 Policy packs (intentrax policy --help):
   Open policy packs, one per scan category, each a C2 policy that decides
@@ -3620,6 +3756,8 @@ Examples:
   intentrax scan .
   intentrax mcp pin --name github --server https://api.example.com/mcp --header 'Authorization: Bearer \${GITHUB_TOKEN}'
   intentrax mcp check
+  intentrax guard claude-code
+  intentrax guard explain --command 'git push --force origin main'
   intentrax policy init --from-scan .
   intentrax policy check --tool Bash --input '{"command":"git push --force origin main"}'
 `);

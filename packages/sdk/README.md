@@ -10,8 +10,8 @@ The package is public on npm (Apache-2.0). Everything below that says
 "offline" or "local" runs today with no API key: `init --dry-run`,
 `check-init`, `verify-proof` (sandbox sample proofs, including tampered ones,
 are bundled at `examples/sandbox/`), `verify-pdf-receipt`, `sandbox` (the
-local assurance sandbox below), `scan`, `policy`, `approve`, `readback` and
-`mcp`. Live execution
+local assurance sandbox below), `scan`, `guard`, `policy`, `approve`,
+`readback` and `mcp`. Live execution
 keys and your sandbox base URL are issued after an architectural review at
 <https://www.intentrax.com/request-architectural-review>.
 
@@ -59,6 +59,15 @@ Public surfaces:
   not show that the server's code or behaviour is unchanged. See
   [mcp/README.md](mcp/README.md).
 
+- `intentrax guard claude-code` (1.11.0) installs a local Claude Code
+  PreToolUse hook. Before a tool call it blocks (force push, `rm -rf` of a
+  root or home, `DROP`/`TRUNCATE`, `terraform destroy`, …) or asks (pushes,
+  deploys, recursive deletes, SQL writes, consequential MCP tools); allow
+  means no objection, and Claude Code's own permission rules still apply. It
+  also applies the policy packs below. Every decision is appended to a local,
+  hash-chained record that `guard verify` checks offline. No account, no
+  network; the record is local and not trust-bearing. See
+  [guard/README.md](guard/README.md).
 - `intentrax policy list|show|hash|validate|init --from-scan|check` (1.10.0):
   open policy packs, one per scan category. Each is a C2 policy that decides
   allow (no objection), ask or block for an agent's tool call, for example
@@ -75,6 +84,15 @@ Public surfaces:
   hashes and showing you the request; `approve keygen` makes the key and its
   registration request. Local only: nothing is sent. See
   [approve/README.md](approve/README.md).
+- `@intentrax/sdk/outputbinding` and `verify-proof --answer-file <answer.txt>
+  [--quote-file <quote.txt>]` (1.11.0): when a proof seals a rendered-output
+  binding, `verify-proof` reports it and says who computed the answer hash
+  (`ENGINE_COMPUTED`: Intentrax hashed the text itself; or
+  `PRODUCER_DECLARED_AT_ISSUANCE`: the company declared it). `--answer-file`
+  checks an answer text against it (`ANSWER_MISMATCH` exits 1), and
+  `--quote-file` whether a quote is part of that answer. A match is a match
+  against the sealed hash, never a verdict on whether the answer is correct.
+  See [outputbinding/README.md](outputbinding/README.md).
 - `@intentrax/sdk/envelope` (1.10.0): the spec 00 primitives (RFC 8785 JCS,
   `D(domain, value)`, and the `intentrax.signed_envelope/1.0` verifier with
   pinned keys), byte-identical to the Go engine's. It verifies; it holds no
