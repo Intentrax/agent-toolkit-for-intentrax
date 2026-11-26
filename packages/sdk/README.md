@@ -105,7 +105,12 @@ Public surfaces:
   directory. You trust the directory through a head you pin
   (`--pin-directory-head`) or a `published_key_set/1.2` key, and can supply
   documents with `--tenant-keys` / `--approver-set`. An approval that was not
-  verified never upgrades the verdict. See
+  verified never upgrades the verdict. Since 1.12.0 it also re-derives the
+  policy facts from the admitted arguments when the export discloses the
+  tenant's fact map (`facts_rederived`; facts that do not re-derive fail
+  closed), and `--receipt-ref <receipt-ref.json>` compares an MCP receipt
+  reference with the sealed tool and arguments hash (`receipt_match`:
+  CONSISTENT, INCONSISTENT or WITHHELD; never a verdict). See
   [preapproval/README.md](preapproval/README.md).
 
 The published package exports Node-runnable `.js` modules with `.d.ts` type

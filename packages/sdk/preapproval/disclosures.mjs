@@ -33,6 +33,39 @@ const HEX64 = /^[0-9a-f]{64}$/;
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 
+// Go's folded member name (encoding/json): ASCII letters upper-cased, and the
+// two non-ASCII runes whose fold set holds an ASCII letter (U+017F long s,
+// U+212A Kelvin sign) mapped to it. Any other non-ASCII name matches no field.
+function goFoldName(name) {
+  let out = "";
+  for (const ch of name) {
+    const c = ch.codePointAt(0);
+    if (c < 0x80) out += ch.toUpperCase();
+    else if (c === 0x17f) out += "S";
+    else if (c === 0x212a) out += "K";
+    else return null;
+  }
+  return out;
+}
+
+// goStringFields reads string fields as Go's json.Unmarshal into a struct of
+// string fields does: member names match ignoring case (Go's fold), members
+// apply in document order so the last match wins, null leaves a field as it
+// was, and any other non-string value is a type error. Returns
+// {values, typeError}; values holds "" for fields never set.
+export function goStringFields(object, fields) {
+  const byFold = new Map(fields.map((f) => [goFoldName(f), f]));
+  const values = Object.fromEntries(fields.map((f) => [f, ""]));
+  let typeError = false;
+  for (const [name, value] of Object.entries(object)) {
+    const field = byFold.get(goFoldName(name));
+    if (field === undefined || value === null) continue;
+    if (typeof value !== "string") typeError = true;
+    else values[field] = value;
+  }
+  return { values, typeError };
+}
+
 // splitProofExport separates the unsigned extras from the proof lookup
 // result. Returns {lookup, extras}; lookup is the export without
 // `attachments` and `disclosures`, so result_hash is computed as before.
@@ -121,22 +154,39 @@ function openedFactValue(field, value) {
 
 // openDisclosures mirrors offlineproof.openDisclosures. admission and policy
 // are the sealed members (null when absent). Returns {report, argumentsHash,
-// facts, salt}; throws (fail closed) on a mismatch or a bad opening.
+// facts, salt, arguments, serverId, toolName}; throws (fail closed) on a
+// mismatch or a bad opening.
 //   report: {arguments_recomputed, tool_commitment_opened, facts_opened?, ignored?}
+//   arguments: the JCS-ANY text of disclosed arguments that hash to the
+//     sealed arguments_hash, or null. Facts are re-derived from this form, as
+//     at admission: a hash-equivalent disclosure (12500.0, 1.25e4) reads as
+//     12500 (spec 03 §6.5).
+//   serverId, toolName: the tool, sealed in PLAINTEXT or opened from
+//     tool_commitment in COMMITTED ("" when unknown).
 export function openDisclosures(admission, policy, extras) {
   const report = { arguments_recomputed: false, tool_commitment_opened: false };
   const ignored = [...(extras.ignored ?? [])];
   const factsOpened = [];
   const facts = {};
   let salt = "";
+  let argumentsText = null;
+  let serverId = "";
+  let toolName = "";
   const finish = (sealedArgumentsHash) => ({
     report: { ...report, ...(factsOpened.length ? { facts_opened: [...factsOpened].sort() } : {}), ...(ignored.length ? { ignored } : {}) },
     argumentsHash: sealedArgumentsHash,
     facts,
     salt,
+    arguments: argumentsText,
+    serverId,
+    toolName,
   });
   if (admission === null) return finish("");
   let sealed = admission.arguments_hash ?? "";
+  if (isObject(admission.tool)) {
+    serverId = admission.tool.server_id ?? "";
+    toolName = admission.tool.tool_name ?? "";
+  }
   if (admission.disclosure === "COMMITTED") {
     const item = (extras.openings ?? []).find((o) => o.commitment === admission.tool_commitment);
     if (item) {
@@ -146,8 +196,14 @@ export function openDisclosures(admission, policy, extras) {
       } catch (err) {
         throw new Error(`tool_commitment opening invalid: ${err.message}`);
       }
-      if (!isObject(value) || typeof value.arguments_hash !== "string" || !HEX64.test(value.arguments_hash)) throw new Error("tool_commitment opening has no arguments_hash");
-      sealed = value.arguments_hash;
+      // Read as the Go verifier's json.Unmarshal into string fields does.
+      const tool = isObject(value) ? goStringFields(value, ["arguments_hash", "server_id", "tool_name"]) : null;
+      if (tool === null || tool.typeError || !HEX64.test(tool.values.arguments_hash)) {
+        throw new Error("tool_commitment opening has no arguments_hash");
+      }
+      sealed = tool.values.arguments_hash;
+      serverId = tool.values.server_id;
+      toolName = tool.values.tool_name;
       report.tool_commitment_opened = true;
     }
   }
@@ -164,6 +220,7 @@ export function openDisclosures(admission, policy, extras) {
     }
     if (hash !== sealed) throw new Error(`disclosed arguments hash ${hash}, the record seals ${sealed}`);
     report.arguments_recomputed = true;
+    argumentsText = serialize(args, PROFILE_ANY);
   }
   const evaluated = policy?.evaluated_facts;
   if (!evaluated) return finish(sealed);

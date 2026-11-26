@@ -36,6 +36,7 @@ export const PREAPPROVAL_LIMITATION_TEXT = Object.freeze({
   EXECUTE_RECHECK_NOT_ATTESTED: "This record admits only a call whose arguments hash to the sealed arguments_hash, and the gate in front of the tool must recompute that hash at execution time and refuse on a mismatch. The record cannot show that the gate did so; only an execution statement (EXECUTION_ATTESTED) can.",
   APPROVER_IDENTITY_ATTESTED_BY_INTENTRAX: "The approval was signed by the Intentrax approval service on behalf of an approver who signed in with an external identity provider. Intentrax attests who approved; the approver did not sign with their own key.",
   APPROVER_KEY_VOUCHED_BY_INTENTRAX: "The approver's key is trusted because the Intentrax tenant key directory lists it. The relying party did not pin the tenant's approver keys itself.",
+  POLICY_FACTS_DERIVED_FROM_ADMITTED_ARGUMENTS: "The verifier re-derived the policy facts from the admitted arguments and the tenant's fact map, and re-ran the published policy over them. That the tool later received those arguments is shown only by EXECUTION_ATTESTED.",
   APPROVAL_EVIDENCE_NOT_CHECKED: "A constraint is sealed as approved or rejected, but the approval evidence was not supplied with the proof or could not be re-checked. The sealed status is Intentrax's statement; this verifier did not check who approved or rejected the request.",
 });
 
@@ -104,6 +105,12 @@ export function authorizationAssessment(binding, reevaluation = null, admission 
     provenance = "VERIFIER_COMPUTED";
     limitations = [...RECHECKED_POLICY_LIMITATIONS];
     reasons.push("POLICY_EVALUATION_RECHECKED");
+    // The request facts were re-derived from the admitted arguments and the
+    // tenant's fact map (spec 03 §6.5, §6.7).
+    if (reevaluation.facts_rederived === true) {
+      reasons.push("FACTS_REDERIVED");
+      limitations = limitations.map((code) => (code === "POLICY_EVENT_SELF_REPORTED" ? "POLICY_FACTS_DERIVED_FROM_ADMITTED_ARGUMENTS" : code));
+    }
   } else {
     reasons.push("POLICY_EVALUATION_NOT_RECHECKED_OFFLINE");
     if (reevaluation && typeof reevaluation.reason === "string" && reevaluation.reason !== "") reasons.push(`POLICY_REEVALUATION_${reevaluation.reason}`);

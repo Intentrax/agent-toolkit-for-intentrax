@@ -5,7 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { buildAgentGatewayAdmissionEnvelope, buildLegacyVerificationAssessment, compilePolicyDocument, deriveAssuranceVerdict, evaluateCompiledPolicy, policyReevaluationMismatches } from "../index.js";
 
-const VERSION = "1.11.0";
+const VERSION = "1.12.0";
 const ADMISSION_SCHEMA_VERSION = "intentrax.runtime.agent_admission_request/1.0";
 const INIT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_init/1.0";
 const ACTION_RECEIPT_SCHEMA_VERSION = "intentrax.onboarding.agent_adapter_action_receipt/1.0";
@@ -354,6 +354,9 @@ async function main(argv) {
       console.log(`Intentrax proof export verification: SANDBOX — not trust-bearing. Integrity and ed25519 signatures check out, and the signers are published sandbox keys. This shows the verification mechanics, not production assurance. proof=${output.registry_entry_id} report=${output.report_path}${transparencySuffix(output)}`);
     }
     if (!options.json) {
+      if (output.receipt_match) {
+        console.log(`receipt: ${output.receipt_match.status}${output.receipt_match.mismatches ? ` ${output.receipt_match.mismatches.join(",")}` : ""}`);
+      }
       console.log(assessmentTable(output.verification_assessment));
       if (output.output_binding) {
         console.log(`output binding: ${output.output_binding.binding_source} content_hash=${output.output_binding.content_hash}`);
@@ -1183,6 +1186,7 @@ function parseVerifyProofOptions(args) {
     pinDirectoryHeads: [],
     answerFile: "",
     quoteFile: "",
+    receiptRef: "",
   };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -1194,6 +1198,8 @@ function parseVerifyProofOptions(args) {
       options.answerFile = requireValue(args, ++index, arg);
     } else if (arg === "--quote-file") {
       options.quoteFile = requireValue(args, ++index, arg);
+    } else if (arg === "--receipt-ref") {
+      options.receiptRef = requireValue(args, ++index, arg);
     } else if (arg === "--tenant-keys") {
       options.tenantKeys.push(requireValue(args, ++index, arg));
     } else if (arg === "--approver-set") {
@@ -1298,7 +1304,7 @@ function readUTF8TextFile(path, label) {
 }
 
 function needsPreapprovalModules(proofExportPath, options) {
-  if (options.tenantKeys.length > 0 || options.approverSets.length > 0 || options.pinDirectoryHeads.length > 0) return true;
+  if (options.tenantKeys.length > 0 || options.approverSets.length > 0 || options.pinDirectoryHeads.length > 0 || options.receiptRef !== "") return true;
   const paths = [...(proofExportPath ? [proofExportPath] : []), ...options.trustedKeys];
   for (const path of paths) {
     let text;
@@ -1354,6 +1360,11 @@ function verifyProofExportCommand(proofExportPath, options) {
       tenantKeyDocuments: options.tenantKeys.map((path) => readDocument(path, "tenant key directory")),
       approverSetDocuments: options.approverSets.map((path) => readDocument(path, "approver set")),
       pinnedDirectoryHeads: options.pinDirectoryHeads,
+      // An MCP receipt reference (spec 01 §8.5) to compare with the sealed
+      // call; undefined without --receipt-ref, null when it is not JSON.
+      // Only compared, never copied into the report, so no private-marker
+      // check (as in the Go verifier).
+      receiptRef: options.receiptRef === "" ? undefined : readReceiptRef(readFileSync(resolve(options.receiptRef), "utf8")),
     };
   }
   const keySets = loadPublishedKeySets(options.trustedKeys, pa);
@@ -1371,6 +1382,16 @@ function verifyProofExportCommand(proofExportPath, options) {
   mkdirSync(dirname(resolve(options.reportOut)), { recursive: true });
   writeFileSync(resolve(options.reportOut), reportData, { mode: 0o600 });
   return report;
+}
+
+// A receipt reference is unauthenticated and only ever compared: text that is
+// not JSON matches nothing (INCONSISTENT schema), as in the Go verifier.
+function readReceiptRef(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 function verifyPDFReceiptCommand(pdfPath, options) {
@@ -1550,7 +1571,7 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
   const allPolicyDocuments = [...policyDocuments, ...disclosedPolicyDocuments];
   // Re-run the sealed evaluation (P1-C step 2); a disagreement fails closed.
   const policyReevaluation = v12 && policyBinding.binding.evaluated_facts.lane === "ADMISSION"
-    ? reevaluateAdmissionPolicyBinding(aepJSON, policyBinding.binding, allPolicyDocuments, pa, opened)
+    ? reevaluateAdmissionPolicyBinding(aepJSON, policyBinding.binding, allPolicyDocuments, pa, opened, preapproval?.extras.factMaps ?? [])
     : reevaluateSealedPolicyBinding(aepJSON, policyBinding.binding, allPolicyDocuments);
   // Approval evidence (spec 02 §5): every 1.2 constraint sealed SATISFIED or
   // REJECTED is re-checked against the attached approvals.
@@ -1644,6 +1665,10 @@ function buildLocalProofVerificationReport(proofExport, proofExportPath, reportP
     ...(outputBinding.binding === null ? {} : { output_binding: outputBinding.binding, output_binding_statement: ob.outputBindingStatement(outputBinding.binding) }),
     ...(answerChecks === null ? {} : { answer_check: answerChecks.answer_check }),
     ...(answerChecks === null || answerChecks.quote_check === null ? {} : { quote_check: answerChecks.quote_check }),
+    // --receipt-ref: CONSISTENT, INCONSISTENT (with the fields that differ)
+    // or WITHHELD. A receipt reference is unauthenticated: the match is
+    // reported and never changes the verdict (spec 01 §8.5).
+    ...(preapproval === null || preapproval.receiptRef === undefined ? {} : { receipt_match: pa.matchReceiptToRecord(preapproval.receiptRef, admissionBinding) }),
     hash_algorithm: "SHA-256",
     boundary_assertions: {
       offline_verifier_used: true,
@@ -1752,7 +1777,12 @@ function sealedPolicyBindingProfile(canonicalAEPJSON) {
 // the event is rebuilt from plaintext facts plus the facts and event salt the
 // export's disclosures opened, and re-run with the tenant request profile.
 // Withheld facts without openings are NOT_RECHECKED / FACTS_WITHHELD.
-function reevaluateAdmissionPolicyBinding(canonicalAEPJSON, binding, policyDocuments, pa, opened) {
+//
+// After a MATCH, the request facts are re-derived from the disclosed
+// arguments and fact map when the export carries them (spec 03 §6.5):
+// facts_rederived is true when they equal the re-checked event; facts that
+// do not follow from the record's own arguments and map fail closed.
+function reevaluateAdmissionPolicyBinding(canonicalAEPJSON, binding, policyDocuments, pa, opened, factMaps) {
   let rebuilt;
   try {
     rebuilt = pa.admissionPolicyEvent(canonicalAEPJSON, binding, opened === null ? { facts: {}, salt: "" } : { facts: opened.facts, salt: opened.salt });
@@ -1772,7 +1802,15 @@ function reevaluateAdmissionPolicyBinding(canonicalAEPJSON, binding, policyDocum
   if (mismatches.length > 0) {
     fail(`proof export verification failed closed: policy re-evaluation mismatch: ${mismatches.join(",")}`);
   }
-  return { status: "MATCH", policy_source: resolved.source };
+  let factsRederived = false;
+  if (opened !== null) {
+    try {
+      factsRederived = pa.rederiveFacts(binding, opened, factMaps);
+    } catch (error) {
+      fail(`proof export verification failed closed: policy re-evaluation: ${stableErrorMessage(error)}`);
+    }
+  }
+  return { status: "MATCH", policy_source: resolved.source, ...(factsRederived ? { facts_rederived: true } : {}) };
 }
 
 // Envelope signers of one purpose (TENANT_KEY_DIRECTORY, APPROVAL_SERVICE),
@@ -3567,7 +3605,7 @@ function printHelp() {
 Usage:
   intentrax init <adapter> [--dry-run] [--force] [--json] [--output-dir <dir>] [--base-url <url>] [--tenant-id <tenant>]
   intentrax check-init --output-dir <dir> [--json]
-  intentrax verify-proof <proof-export.json> [--answer-file <answer.txt> [--quote-file <quote.txt>]] [--trusted-keys <key-set.json>] [--policy-document <policy.json>] [--tlog-trust <transparency-log.json> [--tlog-bundle <proof.tlog.json>]] [--tenant-keys <directory.json>] [--approver-set <approver-set.json>] [--pin-directory-head <hex>] [--json] [--report-out <file>]
+  intentrax verify-proof <proof-export.json> [--answer-file <answer.txt> [--quote-file <quote.txt>]] [--trusted-keys <key-set.json>] [--policy-document <policy.json>] [--tlog-trust <transparency-log.json> [--tlog-bundle <proof.tlog.json>]] [--tenant-keys <directory.json>] [--approver-set <approver-set.json>] [--pin-directory-head <hex>] [--receipt-ref <receipt-ref.json>] [--json] [--report-out <file>]
   intentrax verify-pdf-receipt <receipt.pdf> --pdf-hash <X-Intentrax-PDF-Hash> [--json] [--report-out <file>]
   intentrax sandbox [--scenario confirmed|contradicted] [--check <read-only-check.mjs>] [--dir <dir>] [--json]
   intentrax sandbox verify <bundle.json> [--keys <local-key-set.json>] [--issuer-keys <pinned-external-issuers.json>] [--require-external-issuer <issuer>]... [--json]
@@ -3673,6 +3711,13 @@ Proof export verification:
   APPROVAL_EVIDENCE_INVALID (exit 2). The export's disclosures (arguments,
   commitment openings, policy documents) are re-hashed; a mismatch fails
   closed, and opened facts let the ADMISSION-lane evaluation be re-run.
+  With a FACT_MAP disclosure that hashes to the sealed fact_map_hash, the
+  request facts are re-derived from the admitted arguments: equal facts add
+  facts_rederived to policy_reevaluation (reason FACTS_REDERIVED), and facts
+  that do not re-derive fail closed. --receipt-ref compares an MCP receipt
+  reference (intentrax.mcp.receipt_ref/0.1) with the sealed tool and
+  arguments hash: receipt_match is CONSISTENT, INCONSISTENT or WITHHELD and
+  never changes the verdict.
 
   The SDK ships the production key set (trust/production-key-set.json,
   min_trusted_signers 2) and the sandbox key set (trust/sandbox-key-set.json).
